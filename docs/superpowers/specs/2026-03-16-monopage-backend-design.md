@@ -279,7 +279,7 @@ Authorization: Bearer <token>
 | 2001 | `VALIDATION_INVALID_DATE` | 400 | date 参数格式错误，期望 YYYY-MM-DD | 否 |
 | 2002 | `VALIDATION_INVALID_SOURCE` | 400 | source 参数值无效，期望 openai/anthropic | 否 |
 | 2003 | `VALIDATION_INVALID_PAGE` | 400 | page 参数必须是正整数 | 否 |
-| 2004 | `VALIDATION_INVALID_PAGE_SIZE` | 400 | page_size 必须在 1-100 之间 | 否 |
+| 2004 | `VALIDATION_INVALID_PAGE_SIZE` | 400 | page_size 必须在 1-50 之间 | 否 |
 | 2005 | `VALIDATION_INVALID_DAYS` | 400 | days 必须在 1-7 之间 | 否 |
 
 ### 7.4 限流错误 (30xx)
