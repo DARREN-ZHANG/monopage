@@ -1,20 +1,15 @@
 {
   "name": "monopage",
   "version": "1.0.0",
+  "private": true,
   "description": "Catch up in the morning with a mono page of reading.",
-  "homepage": "https://github.com/DARREN-ZHANG/monopage#readme",
-  "bugs": {
-    "url": "https://github.com/DARREN-ZHANG/monopage/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/DARREN-ZHANG/monopage.git"
-  },
-  "license": "ISC",
-  "author": "iven.zhang",
-  "type": "commonjs",
-  "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  }
+    "dev": "pnpm -F @monopage/api dev",
+    "deploy": "pnpm -F @monopage/api deploy",
+    "build": "pnpm -r build"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
 }
