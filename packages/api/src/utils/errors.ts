@@ -13,6 +13,7 @@ export const ErrorCodes = {
   VALIDATION_INVALID_PAGE: { code: 'VALIDATION_INVALID_PAGE', num: 2003, http: 400, message: 'page 参数必须是正整数', retryable: false },
   VALIDATION_INVALID_PAGE_SIZE: { code: 'VALIDATION_INVALID_PAGE_SIZE', num: 2004, http: 400, message: 'page_size 必须在 1-50 之间', retryable: false },
   VALIDATION_INVALID_DAYS: { code: 'VALIDATION_INVALID_DAYS', num: 2005, http: 400, message: 'days 必须在 1-7 之间', retryable: false },
+  VALIDATION_INVALID_JSON: { code: 'VALIDATION_INVALID_JSON', num: 2006, http: 400, message: '请求体必须是合法 JSON', retryable: false },
 
   // 限流错误 (30xx)
   RATE_LIMITED: { code: 'RATE_LIMITED', num: 3001, http: 429, message: '超过全局限流阈值', retryable: true },

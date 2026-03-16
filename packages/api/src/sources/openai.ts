@@ -54,6 +54,9 @@ export class OpenAISourceParser extends BaseSourceParser {
 
         if (title && link && pubDate) {
           const publishedAt = this.parseDate(pubDate);
+          if (!publishedAt) {
+            continue;
+          }
           const article: Article = {
             id: generateArticleId('openai', link, title),
             source: 'openai',
@@ -94,9 +97,13 @@ export class OpenAISourceParser extends BaseSourceParser {
           const relativeUrl = match[1];
           const title = this.cleanHtmlEntities(match[2].trim());
           const url = `${this.config.baseUrl}${relativeUrl}`;
+          const snippet = html.slice(Math.max(0, match.index - 300), Math.min(html.length, match.index + 700));
 
-          // 尝试从 URL 提取日期
-          const publishedAt = this.extractDateFromUrl(relativeUrl) || new Date();
+          // 优先从页面片段读取发布时间，失败再回退 URL
+          const publishedAt = this.extractDateFromSnippet(snippet) || this.extractDateFromUrl(relativeUrl);
+          if (!publishedAt) {
+            continue;
+          }
 
           const article: Article = {
             id: generateArticleId('openai', url, title),
@@ -129,10 +136,10 @@ export class OpenAISourceParser extends BaseSourceParser {
     return match ? match[1].trim() : null;
   }
 
-  private parseDate(dateStr: string): Date {
+  private parseDate(dateStr: string): Date | null {
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) {
-      return new Date();
+      return null;
     }
     return date;
   }
@@ -147,6 +154,28 @@ export class OpenAISourceParser extends BaseSourceParser {
         return date;
       }
     }
+    return null;
+  }
+
+  private extractDateFromSnippet(snippet: string): Date | null {
+    const datetimeAttr = snippet.match(/datetime="([^"]+)"/i)?.[1];
+    if (datetimeAttr) {
+      const parsed = new Date(datetimeAttr);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    const dateText =
+      snippet.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] ||
+      snippet.match(/\b[A-Z][a-z]{2,8}\s+\d{1,2},\s+\d{4}\b/)?.[0];
+    if (dateText) {
+      const parsed = new Date(dateText);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
     return null;
   }
 

@@ -170,6 +170,28 @@ export class StorageService {
     );
   }
 
+  /**
+   * 获取最近 N 天内某个数据源的已存在文章 ID 集合
+   */
+  async getExistingIdsBySource(source: SourceType, days: number = this.historyDays): Promise<Set<string>> {
+    const now = new Date();
+    const fromDate = new Date(now);
+    fromDate.setDate(fromDate.getDate() - Math.max(1, days) + 1);
+
+    const from = fromDate.toISOString().slice(0, 10);
+    const to = now.toISOString().slice(0, 10);
+    const indexes = await this.getIndexRange(from, to);
+    const ids = new Set<string>();
+
+    for (const index of indexes.values()) {
+      for (const id of index[source] || []) {
+        ids.add(id);
+      }
+    }
+
+    return ids;
+  }
+
   // ===== 数据清理 =====
 
   /**
@@ -183,11 +205,8 @@ export class StorageService {
     const errors: string[] = [];
     let deletedKeys = 0;
 
-    // 获取所有 KV Key（限制：在生产环境中可能需要分页处理）
     try {
-      const list = await this.kv.list({ prefix: `${SUMMARY_PREFIX}:` });
-
-      for (const key of list.keys) {
+      for await (const key of this.listKeysByPrefix(`${SUMMARY_PREFIX}:`)) {
         // 从 key 中提取日期: summary:{source}:{date}:{id}
         const parts = key.name.split(':');
         if (parts.length >= 3) {
@@ -204,8 +223,7 @@ export class StorageService {
       }
 
       // 清理过期索引
-      const indexList = await this.kv.list({ prefix: `${INDEX_PREFIX}:` });
-      for (const key of indexList.keys) {
+      for await (const key of this.listKeysByPrefix(`${INDEX_PREFIX}:`)) {
         const parts = key.name.split(':');
         if (parts.length >= 2) {
           const date = parts[1];
@@ -224,6 +242,17 @@ export class StorageService {
     }
 
     return { deletedKeys, errors };
+  }
+
+  private async *listKeysByPrefix(prefix: string): AsyncGenerator<{ name: string }> {
+    let cursor: string | undefined = undefined;
+    do {
+      const page: KVNamespaceListResult<unknown> = await this.kv.list({ prefix, cursor });
+      for (const key of page.keys) {
+        yield { name: key.name };
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
   }
 
   // ===== 最后刷新时间 =====

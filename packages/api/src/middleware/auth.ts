@@ -1,6 +1,11 @@
 import { AppError } from '../utils/errors.js';
 import type { Env } from '../types.js';
 
+interface ConfigTokenData {
+  api_token?: string;
+  apiToken?: string;
+}
+
 /**
  * 从请求中提取并验证 Bearer Token
  * @param request - HTTP 请求对象
@@ -23,8 +28,8 @@ export async function authenticate(request: Request, env: Env): Promise<void> {
 
   const token = parts[1];
 
-  // 验证 Token（从环境变量或 KV 中获取配置的 Token）
-  const validToken = env.API_TOKEN;
+  // 优先从 KV config 读取 token，兼容环境变量兜底
+  const validToken = await getValidToken(env);
 
   if (!validToken) {
     throw new AppError('CONFIG_MISSING');
@@ -33,4 +38,26 @@ export async function authenticate(request: Request, env: Env): Promise<void> {
   if (token !== validToken) {
     throw new AppError('AUTH_INVALID_TOKEN');
   }
+}
+
+async function getValidToken(env: Env): Promise<string | null> {
+  try {
+    const rawConfig = await env.KV.get('config');
+    if (rawConfig) {
+      const parsed = JSON.parse(rawConfig) as ConfigTokenData;
+      const kvToken = parsed.api_token ?? parsed.apiToken;
+      if (typeof kvToken === 'string' && kvToken.trim()) {
+        return kvToken;
+      }
+    }
+  } catch (error) {
+    console.error('Failed to read auth token from KV config:', error);
+    throw new AppError('SERVICE_UNAVAILABLE', error instanceof Error ? error : undefined);
+  }
+
+  if (typeof env.API_TOKEN === 'string' && env.API_TOKEN.trim()) {
+    return env.API_TOKEN;
+  }
+
+  return null;
 }

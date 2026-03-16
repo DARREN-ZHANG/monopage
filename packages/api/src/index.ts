@@ -1,8 +1,8 @@
 import { authenticate } from './middleware/auth.js';
 import { checkRateLimit } from './middleware/rateLimit.js';
 import { handleArticles } from './routes/articles.js';
-import { handleRefresh } from './routes/refresh.js';
-import { errorResponse } from './utils/response.js';
+import { handleRefresh, runRefresh } from './routes/refresh.js';
+import { errorResponse, notFoundResponse } from './utils/response.js';
 import { AppError } from './utils/errors.js';
 import type { Env } from './types.js';
 
@@ -46,10 +46,7 @@ export default {
       }
 
       // 404 处理
-      return new Response(
-        JSON.stringify({ success: false, error: { message: 'Not Found' } }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
-      );
+      return notFoundResponse();
     } catch (error) {
       if (error instanceof AppError) {
         return errorResponse(error);
@@ -68,25 +65,9 @@ export default {
     console.log('Cron triggered at:', new Date().toISOString());
 
     try {
-      // 创建一个模拟的 POST /refresh 请求
-      const refreshRequest = new Request('https://monopage-api.workers.dev/refresh', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${env.API_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({}),
-      });
-
-      const response = await this.fetch(refreshRequest, env, ctx);
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log('Cron refresh completed:', JSON.stringify(result, null, 2));
-      } else {
-        const error = await response.json();
-        console.error('Cron refresh failed:', JSON.stringify(error, null, 2));
-      }
+      // Cron 直接执行业务逻辑，避免被认证/限流中间件拦截
+      const result = await runRefresh(env);
+      console.log('Cron refresh completed:', JSON.stringify(result, null, 2));
     } catch (error) {
       console.error('Cron execution error:', error);
     }

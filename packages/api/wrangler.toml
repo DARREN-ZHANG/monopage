@@ -8,6 +8,10 @@ binding = "KV"
 id = "your-kv-namespace-id"
 preview_id = "your-preview-kv-namespace-id"
 
+# Workers AI 绑定
+[ai]
+binding = "AI"
+
 # 定时任务 - 每天 UTC 06:00 运行
 [triggers]
 crons = ["0 6 * * *"]

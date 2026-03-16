@@ -42,9 +42,13 @@ export class AnthropicSourceParser extends BaseSourceParser {
           const relativeUrl = match[1];
           const title = this.cleanHtmlEntities(match[2].trim());
           const url = `${this.config.baseUrl}${relativeUrl}`;
+          const snippet = html.slice(Math.max(0, match.index - 300), Math.min(html.length, match.index + 700));
 
-          // 尝试从 URL 或附近元素提取日期
-          const publishedAt = this.extractDateFromUrl(relativeUrl) || new Date();
+          // 优先从页面片段提取日期，再回退 URL
+          const publishedAt = this.extractDateFromSnippet(snippet) || this.extractDateFromUrl(relativeUrl);
+          if (!publishedAt) {
+            continue;
+          }
 
           const article: Article = {
             id: generateArticleId('anthropic', url, title),
@@ -81,7 +85,11 @@ export class AnthropicSourceParser extends BaseSourceParser {
 
           if (titleMatch) {
             const title = this.cleanHtmlEntities(titleMatch[1].trim());
-            const publishedAt = this.extractDateFromUrl(url) || new Date();
+            const snippet = html.slice(Math.max(0, linkMatch.index - 300), Math.min(html.length, linkMatch.index + 700));
+            const publishedAt = this.extractDateFromSnippet(snippet) || this.extractDateFromUrl(url);
+            if (!publishedAt) {
+              continue;
+            }
 
             articles.push({
               id: generateArticleId('anthropic', fullUrl, title),
@@ -113,6 +121,28 @@ export class AnthropicSourceParser extends BaseSourceParser {
         return date;
       }
     }
+    return null;
+  }
+
+  private extractDateFromSnippet(snippet: string): Date | null {
+    const datetimeAttr = snippet.match(/datetime="([^"]+)"/i)?.[1];
+    if (datetimeAttr) {
+      const parsed = new Date(datetimeAttr);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    const dateText =
+      snippet.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] ||
+      snippet.match(/\b[A-Z][a-z]{2,8}\s+\d{1,2},\s+\d{4}\b/)?.[0];
+    if (dateText) {
+      const parsed = new Date(dateText);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
     return null;
   }
 

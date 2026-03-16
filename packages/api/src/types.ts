@@ -14,6 +14,15 @@ export interface ArticleSummary extends Article {
   summarizedAt: string;
 }
 
+export interface ApiArticleSummary {
+  id: string;
+  source: SourceType;
+  title: string;
+  summary_md: string;
+  source_url: string;
+  published_at: string;
+}
+
 export type SourceType = 'openai' | 'anthropic';
 
 export interface SourceConfig {
@@ -35,19 +44,19 @@ export interface ArticlesQueryParams {
 export interface ArticlesResponse {
   success: true;
   data: {
-    articles: ArticleSummary[];
+    articles: ApiArticleSummary[];
   };
   meta: {
     page: number;
-    pageSize: number;
-    totalCount: number;
-    totalPages: number;
-    sourcesIncluded: SourceType[];
-    dateRange: {
+    page_size: number;
+    total_count: number;
+    total_pages: number;
+    sources_included: SourceType[];
+    date_range: {
       from: string;
       to: string;
     };
-    lastRefreshedAt: string | null;
+    last_refreshed_at: string | null;
   };
 }
 
@@ -58,12 +67,12 @@ export interface RefreshRequest {
 export interface RefreshResponse {
   success: true;
   data: {
-    refreshedSources: SourceType[];
-    articlesFound: number;
-    articlesSummarized: number;
-    articlesSkipped: {
+    refreshed_sources: SourceType[];
+    articles_found: number;
+    articles_summarized: number;
+    articles_skipped: {
       duplicate: number;
-      incompleteMetadata: number;
+      incomplete_metadata: number;
     };
     errors: string[];
   };
@@ -73,7 +82,7 @@ export interface ErrorResponse {
   success: false;
   error: {
     code: string;
-    codeNum: number;
+    code_num: number;
     message: string;
     retryable: boolean;
   };
@@ -124,7 +133,7 @@ export interface LLMProvider {
 export interface Env {
   KV: KVNamespace;
   AI: Ai; // Cloudflare Workers AI binding
-  API_TOKEN: string;
+  API_TOKEN?: string;
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   LLM_PROVIDER: string;

@@ -1,17 +1,21 @@
 import type { SourceType } from '../types.js';
 
 /**
- * 生成简单的哈希值（基于字符串内容）
- * 使用 FNV-1a 算法的简化版本
+ * 生成 64-bit FNV-1a 哈希值（BigInt）
+ * 相比 32-bit 版本碰撞概率显著降低
  */
 function simpleHash(input: string): string {
-  let hash = 0x811c9dc5;
+  let hash = 0xcbf29ce484222325n;
+  const fnvPrime = 0x100000001b3n;
+  const mod64 = 0xffffffffffffffffn;
+
   for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i);
-    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+    hash ^= BigInt(input.charCodeAt(i));
+    hash = (hash * fnvPrime) & mod64;
   }
-  // 转换为 12 位十六进制字符串
-  return (hash >>> 0).toString(16).padStart(8, '0').slice(0, 12);
+
+  // 输出 12 位十六进制字符串，兼顾稳定性与长度
+  return hash.toString(16).padStart(16, '0').slice(0, 12);
 }
 
 /**
@@ -24,7 +28,7 @@ function simpleHash(input: string): string {
  * @param title - 文章标题（备选）
  */
 export function generateArticleId(source: SourceType, url: string, title?: string): string {
-  const content = url || title || '';
+  const content = `${source}|${url || ''}|${title || ''}`;
   const hash = simpleHash(content);
   return `${source}_${hash}`;
 }
