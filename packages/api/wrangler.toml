@@ -1,0 +1,27 @@
+name = "monopage-api"
+main = "src/index.ts"
+compatibility_date = "2024-03-16"
+
+# KV 命名空间绑定
+[[kv_namespaces]]
+binding = "KV"
+id = "your-kv-namespace-id"
+preview_id = "your-preview-kv-namespace-id"
+
+# 定时任务 - 每天 UTC 06:00 运行
+[triggers]
+crons = ["0 6 * * *"]
+
+# 环境变量
+[vars]
+LLM_PROVIDER = "cloudflare"
+LLM_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
+RATE_LIMIT_PER_HOUR = "100"
+LLM_TIMEOUT_MS = "30000"
+SCRAPER_TIMEOUT_MS = "15000"
+HISTORY_DAYS = "7"
+
+# 开发环境
+[env.development]
+[env.development.vars]
+LLM_PROVIDER = "cloudflare"
