@@ -1,6 +1,9 @@
 import { authenticate } from './middleware/auth.js';
 import { checkRateLimit } from './middleware/rateLimit.js';
 import { handleArticles } from './routes/articles.js';
+import { handleLogin } from './routes/login.js';
+import { handleLogout } from './routes/logout.js';
+import { handleMe } from './routes/me.js';
 import { handleRefresh, runRefresh } from './routes/refresh.js';
 import { errorResponse, notFoundResponse } from './utils/response.js';
 import { AppError } from './utils/errors.js';
@@ -25,15 +28,32 @@ export default {
         });
       }
 
+      // 路由分发
+      const url = new URL(request.url);
+      const path = url.pathname;
+
+      // POST /login - 无需认证
+      if (path === '/login' && request.method === 'POST') {
+        return handleLogin(request, env);
+      }
+
+      // POST /logout - 无需认证（仅清除 cookie）
+      if (path === '/logout' && request.method === 'POST') {
+        return handleLogout(request, env);
+      }
+
+      // GET /me - 使用自己的认证返回用户信息
+      if (path === '/me' && request.method === 'GET') {
+        return handleMe(request, env);
+      }
+
+      // 以下路由需要认证和限流
+
       // 认证检查
       await authenticate(request, env);
 
       // 限流检查
       await checkRateLimit(env);
-
-      // 路由分发
-      const url = new URL(request.url);
-      const path = url.pathname;
 
       // GET /articles
       if (path === '/articles' && request.method === 'GET') {

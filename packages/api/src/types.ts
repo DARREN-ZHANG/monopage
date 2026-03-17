@@ -134,6 +134,7 @@ export interface Env {
   KV: KVNamespace;
   AI: Ai; // Cloudflare Workers AI binding
   API_TOKEN?: string;
+  JWT_SECRET?: string;
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   LLM_PROVIDER: string;

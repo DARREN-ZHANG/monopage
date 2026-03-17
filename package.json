@@ -5,7 +5,9 @@
   "description": "Catch up in the morning with a mono page of reading.",
   "scripts": {
     "dev": "pnpm -F @monopage/api dev",
+    "dev:web": "pnpm -F @monopage/web dev",
     "deploy": "pnpm -F @monopage/api deploy",
+    "deploy:web": "pnpm -F @monopage/web deploy",
     "build": "pnpm -r build"
   },
   "devDependencies": {

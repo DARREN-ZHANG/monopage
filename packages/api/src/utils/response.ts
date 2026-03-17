@@ -14,6 +14,13 @@ function jsonHeaders(): HeadersInit {
   };
 }
 
+export function jsonResponse<T>(data: T): Response {
+  return new Response(JSON.stringify({ success: true, data }), {
+    status: 200,
+    headers: jsonHeaders(),
+  });
+}
+
 export function successResponse<T>(data: T): Response {
   return new Response(JSON.stringify({ success: true, data }), {
     status: 200,
