@@ -6,6 +6,7 @@ export const ErrorCodes = {
   AUTH_MISSING: { code: 'AUTH_MISSING', num: 1001, http: 401, message: '缺少 Authorization Header', retryable: false },
   AUTH_INVALID_FORMAT: { code: 'AUTH_INVALID_FORMAT', num: 1002, http: 401, message: 'Token 格式错误，期望 Bearer 格式', retryable: false },
   AUTH_INVALID_TOKEN: { code: 'AUTH_INVALID_TOKEN', num: 1003, http: 401, message: 'Token 无效或不匹配', retryable: false },
+  AUTH_INVALID_CREDENTIALS: { code: 'AUTH_INVALID_CREDENTIALS', num: 1004, http: 401, message: '用户名或密码错误', retryable: false },
 
   // 参数验证错误 (20xx)
   VALIDATION_INVALID_DATE: { code: 'VALIDATION_INVALID_DATE', num: 2001, http: 400, message: 'date 参数格式错误，期望 YYYY-MM-DD', retryable: false },
