@@ -10,25 +10,49 @@ import { AuthError, ApiError } from '../types';
 
 class ApiClient {
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const response = await fetch(`/api${path}`, {
-      ...options,
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
+    try {
+      const response = await fetch(`/api${path}`, {
+        ...options,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new AuthError();
+      // 尝试解析 JSON，处理空响应
+      let data;
+      const contentType = response.headers.get('content-type');
+      if (contentType?.includes('application/json')) {
+        const text = await response.text();
+        data = text ? JSON.parse(text) : {};
+      } else {
+        data = {};
       }
-      throw new ApiError(data as ApiErrorResponse);
-    }
 
-    return data;
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new AuthError('登录已过期，请重新登录');
+        }
+        if (response.status === 405) {
+          throw new Error('请求方法错误');
+        }
+        if (data.error) {
+          throw new ApiError(data as ApiErrorResponse);
+        }
+        throw new Error(`请求失败 (${response.status})`);
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof AuthError || error instanceof ApiError) {
+        throw error;
+      }
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        throw new Error('网络连接失败，请检查网络');
+      }
+      throw error;
+    }
   }
 
   async login(username: string, password: string): Promise<LoginResponse> {

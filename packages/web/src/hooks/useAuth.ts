@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
-import { AuthError } from '../types';
+import { AuthError, type MeResponse, type LoginResponse } from '../types';
 
 interface UseAuthReturn {
   user: string | null;
@@ -20,14 +20,14 @@ export function useAuth(): UseAuthReturn {
 
     async function checkAuth() {
       try {
-        const response = await api.getMe();
-        if (mounted) {
+        const response: MeResponse = await api.getMe();
+        if (mounted && response.success && response.data) {
           setUser(response.data.username);
-          setIsLoading(false);
         }
       } catch {
+        // 未登录或 token 过期，忽略错误
+      } finally {
         if (mounted) {
-          setUser(null);
           setIsLoading(false);
         }
       }
@@ -42,16 +42,21 @@ export function useAuth(): UseAuthReturn {
     setError(null);
 
     try {
-      const response = await api.login(username, password);
-      setUser(response.data.username);
-      setIsLoading(false);
-      return { success: true };
+      const response: LoginResponse = await api.login(username, password);
+      if (response.success && response.data) {
+        setUser(response.data.username);
+        setIsLoading(false);
+        return { success: true };
+      }
+      throw new Error('登录响应格式错误');
     } catch (err) {
-      const errorMessage = err instanceof AuthError
-        ? '用户名或密码错误'
-        : err instanceof Error
-          ? err.message
-          : '登录失败，请稍后重试';
+      let errorMessage = '登录失败，请稍后重试';
+
+      if (err instanceof AuthError) {
+        errorMessage = err.message || '用户名或密码错误';
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      }
 
       setIsLoading(false);
       setError(errorMessage);
@@ -63,7 +68,7 @@ export function useAuth(): UseAuthReturn {
     try {
       await api.logout();
     } catch {
-      // Ignore logout errors
+      // 忽略登出错误
     } finally {
       setUser(null);
       setIsLoading(false);
