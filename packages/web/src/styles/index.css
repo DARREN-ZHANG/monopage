@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-bg-primary text-primary;
+  }
+
+  a {
+    @apply text-primary hover:text-secondary transition-colors;
+  }
+}
+
+@layer components {
+  .card-hover {
+    @apply hover:bg-bg-secondary transition-colors duration-200;
+  }
+
+  .skeleton-pulse {
+    @apply animate-pulse bg-gray-200;
+  }
+}
