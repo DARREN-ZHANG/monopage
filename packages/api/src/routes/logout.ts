@@ -4,10 +4,7 @@ import { jsonResponse } from '../utils/response.js';
 import type { Env } from '../types.js';
 
 export async function handleLogout(request: Request, env: Env): Promise<Response> {
-  const response = jsonResponse({
-    success: true,
-    data: null,
-  });
+  const response = jsonResponse(null);
 
   // 清除 Cookie
   response.headers.set(

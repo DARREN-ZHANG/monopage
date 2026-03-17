@@ -1,12 +1,13 @@
 name = "monopage-api"
 main = "src/index.ts"
 compatibility_date = "2024-03-16"
+account_id = "35badbd60b74b0162ea3897b4bcb80d2"
 
 # KV 命名空间绑定
 [[kv_namespaces]]
 binding = "KV"
-id = "your-kv-namespace-id"
-preview_id = "your-preview-kv-namespace-id"
+id = "9bff7c888b4f482babc75eba54a87d02"
+preview_id = "71a30d44bb424f938853c454f63ea6de"
 
 # Workers AI 绑定
 [ai]

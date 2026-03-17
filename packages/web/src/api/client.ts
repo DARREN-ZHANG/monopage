@@ -10,7 +10,7 @@ import { AuthError, ApiError } from '../types';
 
 class ApiClient {
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const response = await fetch(path, {
+    const response = await fetch(`/api${path}`, {
       ...options,
       credentials: 'include',
       headers: {

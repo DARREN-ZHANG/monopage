@@ -56,10 +56,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   const token = await signToken(username, jwtSecret);
 
   // 返回成功响应并设置 HttpOnly Cookie
-  const response = jsonResponse({
-    success: true,
-    data: { username },
-  });
+  const response = jsonResponse({ username });
 
   // 设置 Cookie
   response.headers.set(
