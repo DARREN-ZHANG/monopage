@@ -144,13 +144,16 @@ export class StorageService {
   async getSummariesByDateRange(
     fromDate: string,
     toDate: string,
-    sourceFilter?: SourceType
+    sourceFilter?: SourceType | SourceType[]
   ): Promise<ArticleSummary[]> {
     const indexes = await this.getIndexRange(fromDate, toDate);
     const summaries: ArticleSummary[] = [];
 
     for (const [date, index] of indexes) {
-      const sources = sourceFilter ? [sourceFilter] : Object.keys(index) as SourceType[];
+      // 支持单选或多选
+      const sources = sourceFilter
+        ? (Array.isArray(sourceFilter) ? sourceFilter : [sourceFilter])
+        : Object.keys(index) as SourceType[];
 
       for (const source of sources) {
         const ids = index[source] || [];

@@ -4,7 +4,7 @@ import { StorageService } from '../services/storage.js';
 import type { ApiArticleSummary, ArticlesQueryParams, ArticlesResponse, Env, SourceType } from '../types.js';
 
 // 查询参数验证
-const VALID_SOURCES: SourceType[] = ['openai', 'anthropic'];
+const VALID_SOURCES: SourceType[] = ['openai', 'anthropic', 'codex', 'opencode'];
 const MAX_PAGE_SIZE = 50;
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_DAYS = 7;
@@ -32,7 +32,7 @@ export async function handleArticles(request: Request, env: Env): Promise<Respon
     const summaries = await storage.getSummariesByDateRange(
       fromDate,
       toDate,
-      params.source
+      params.sources || params.source  // 支持多选或单选
     );
 
     // 分页
@@ -51,9 +51,11 @@ export async function handleArticles(request: Request, env: Env): Promise<Respon
     }));
 
     // 确定包含的数据源
-    const sourcesIncluded = params.source
-      ? [params.source]
-      : [...new Set(summaries.map(s => s.source))];
+    const sourcesIncluded = params.sources
+      ? params.sources
+      : params.source
+        ? [params.source]
+        : [...new Set(summaries.map(s => s.source))];
 
     // 获取最后刷新时间
     const lastRefreshedAt = await storage.getLastRefreshed();
@@ -104,6 +106,15 @@ function parseQueryParams(searchParams: URLSearchParams): ParsedArticlesQuery {
     params.source = source as SourceType;
   }
 
+  // sources 参数（多选）
+  const sourcesParam = searchParams.get('sources');
+  if (sourcesParam) {
+    const sources = sourcesParam.split(',').filter(s =>
+      VALID_SOURCES.includes(s as SourceType)
+    ) as SourceType[];
+    params.sources = sources.length > 0 ? sources : undefined;
+  }
+
   // days 参数
   const days = searchParams.get('days');
   if (days) {
@@ -137,6 +148,7 @@ function parseQueryParams(searchParams: URLSearchParams): ParsedArticlesQuery {
   return {
     date: params.date,
     source: params.source,
+    sources: params.sources,
     days: params.days ?? 1,
     page: params.page ?? 1,
     pageSize: params.pageSize ?? DEFAULT_PAGE_SIZE,
