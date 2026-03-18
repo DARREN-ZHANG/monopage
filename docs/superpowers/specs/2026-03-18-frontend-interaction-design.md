@@ -119,29 +119,23 @@ FilterBar/
 
 ### 后端配置
 
-#### wrangler.jsonc
+#### wrangler.toml (追加配置)
 
-```jsonc
-{
-  "queues": {
-    "producers": [
-      {
-        "queue": "refresh-queue",
-        "binding": "REFRESH_QUEUE"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "refresh-queue",
-        "max_batch_size": 1,
-        "max_batch_timeout": 1
-      }
-    ]
-  }
-}
+```toml
+# Queue 配置
+[[queues.producers]]
+queue = "refresh-queue"
+binding = "REFRESH_QUEUE"
+
+[[queues.consumers]]
+queue = "refresh-queue"
+max_batch_size = 1
+max_batch_timeout = 1
 ```
 
 #### 类型定义 (types.ts)
+
+> 注意：以下为新增字段，实现时需合并到现有 `Env` 接口中
 
 ```typescript
 // 扩展 Env 接口
@@ -517,3 +511,5 @@ function useRefreshStatus(options?: UseRefreshStatusOptions): UseRefreshStatusRe
    - [ ] 并发控制生效（已有任务时返回现有 taskId）
    - [ ] 刷新进行中时，再次点击不创建新任务
    - [ ] 轮询失败时正确重试（最多 3 次）
+   - [ ] 页面刷新/关闭时取消轮询
+   - [ ] 刷新任务有超时保护（5 分钟后自动标记为 failed）
