@@ -86,6 +86,111 @@ FilterBar/
 
 ## 3. 刷新状态管理
 
+### 技术方案：Cloudflare Queues
+
+使用 Cloudflare Queues 实现异步刷新，解决 Workers 30 秒超时限制。
+
+**免费额度：**
+- 10,000 operations/day
+- 消息保留 24 小时
+- 预计每天消耗 ~63 operations（远低于限额）
+
+**架构：**
+```
+┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Client     │     │  API Worker     │     │  Queue Consumer │
+│  (前端)     │     │  (fetch)        │     │  (queue)        │
+├─────────────┤     ├─────────────────┤     ├─────────────────┤
+│ POST /refresh────▶│ send message    │     │                 │
+│              │     │ to Queue        │     │                 │
+│              │     │ return taskId   │     │                 │
+│              │     │                 │     │                 │
+│ GET /status ◀────▶│ read status     │     │ process refresh │
+│              │     │ from KV         │     │ update KV status│
+│              │     │                 │     │                 │
+└─────────────┘     └─────────────────┘     └─────────────────┘
+                              │                      │
+                              ▼                      ▼
+                       ┌─────────────────────────────────┐
+                       │        KV Storage               │
+                       │  refresh:status:{taskId}        │
+                       └─────────────────────────────────┘
+```
+
+### 后端配置
+
+#### wrangler.jsonc
+
+```jsonc
+{
+  "queues": {
+    "producers": [
+      {
+        "queue": "refresh-queue",
+        "binding": "REFRESH_QUEUE"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "refresh-queue",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1
+      }
+    ]
+  }
+}
+```
+
+#### 类型定义 (types.ts)
+
+```typescript
+// 扩展 Env 接口
+export interface Env {
+  KV: KVNamespace;
+  REFRESH_QUEUE: Queue<RefreshMessage>;
+  // ... 其他字段
+}
+
+// Queue 消息
+export interface RefreshMessage {
+  taskId: string;
+  timestamp: string;
+}
+
+// 刷新状态
+export type RefreshTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface RefreshTaskProgress {
+  current: number;
+  total: number;
+  currentSource: SourceType;
+}
+
+export interface RefreshTaskState {
+  taskId: string;
+  status: RefreshTaskStatus;
+  startedAt: string;
+  completedAt?: string;
+  progress?: RefreshTaskProgress;
+  result?: RefreshResponse['data'];
+  error?: string;
+}
+
+// API 响应类型
+export interface RefreshTriggerResponse {
+  success: true;
+  data: {
+    taskId: string;
+    status: 'pending';
+  };
+}
+
+export interface RefreshStatusResponse {
+  success: true;
+  data: RefreshTaskState;
+}
+```
+
 ### 后端 API 设计
 
 #### POST /refresh
@@ -176,6 +281,134 @@ Value: {
 
 - 同一时刻只允许一个刷新任务
 - 若已有进行中的任务，`POST /refresh` 返回现有 taskId，不创建新任务
+- 使用 KV key `refresh:current` 存储当前进行中的 taskId
+
+### 后端实现
+
+#### index.ts (Worker 入口)
+
+```typescript
+export default {
+  // HTTP 请求处理
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // ... 现有路由
+
+    // POST /refresh - 触发异步刷新
+    if (path === '/refresh' && request.method === 'POST') {
+      return handleRefreshTrigger(request, env);
+    }
+
+    // GET /refresh/status - 查询刷新状态
+    if (path === '/refresh/status' && request.method === 'GET') {
+      return handleRefreshStatus(request, env);
+    }
+  },
+
+  // Queue 消息处理 (Consumer)
+  async queue(batch: Message<RefreshMessage>[], env: Env, ctx: ExecutionContext): Promise<void> {
+    for (const message of batch.messages) {
+      await processRefreshTask(message.body, env);
+    }
+  },
+
+  // Cron 定时任务
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Cron 仍然直接执行，不经过队列
+    await runRefresh(env);
+  },
+} satisfies ExportedHandler<Env>;
+```
+
+#### refresh.ts (核心逻辑)
+
+```typescript
+// 触发异步刷新
+export async function handleRefreshTrigger(request: Request, env: Env): Promise<Response> {
+  // 检查是否有进行中的任务
+  const currentTask = await env.KV.get('refresh:current');
+  if (currentTask) {
+    const state = await env.KV.get(`refresh:status:${currentTask}`);
+    if (state) {
+      const task = JSON.parse(state) as RefreshTaskState;
+      if (task.status === 'pending' || task.status === 'running') {
+        return Response.json({ success: true, data: { taskId: currentTask, status: task.status } });
+      }
+    }
+  }
+
+  // 创建新任务
+  const taskId = `rf_${Date.now()}`;
+  const taskState: RefreshTaskState = {
+    taskId,
+    status: 'pending',
+    startedAt: new Date().toISOString(),
+  };
+
+  // 存储状态
+  await env.KV.put(`refresh:status:${taskId}`, JSON.stringify(taskState), { expirationTtl: 3600 });
+  await env.KV.put('refresh:current', taskId, { expirationTtl: 3600 });
+
+  // 发送到队列
+  await env.REFRESH_QUEUE.send({ taskId, timestamp: new Date().toISOString() });
+
+  return Response.json({ success: true, data: { taskId, status: 'pending' } });
+}
+
+// 查询刷新状态
+export async function handleRefreshStatus(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const taskId = url.searchParams.get('taskId');
+
+  if (!taskId) {
+    return Response.json({ success: false, error: { code: 'MISSING_TASK_ID' } }, { status: 400 });
+  }
+
+  const state = await env.KV.get(`refresh:status:${taskId}`);
+  if (!state) {
+    return Response.json({ success: false, error: { code: 'TASK_NOT_FOUND' } }, { status: 404 });
+  }
+
+  return Response.json({ success: true, data: JSON.parse(state) });
+}
+
+// 处理刷新任务 (Queue Consumer)
+async function processRefreshTask(message: RefreshMessage, env: Env): Promise<void> {
+  const { taskId } = message;
+
+  // 更新状态为 running
+  await updateTaskStatus(env, taskId, 'running');
+
+  try {
+    // 执行刷新逻辑，带进度更新
+    const result = await runRefreshWithProgress(env, taskId);
+
+    // 更新状态为 completed
+    await updateTaskStatus(env, taskId, 'completed', result);
+  } catch (error) {
+    // 更新状态为 failed
+    await updateTaskStatus(env, taskId, 'failed', undefined, error instanceof Error ? error.message : 'Unknown error');
+  }
+
+  // 清除当前任务标记
+  await env.KV.delete('refresh:current');
+}
+
+// 带进度更新的刷新
+async function runRefreshWithProgress(env: Env, taskId: string): Promise<RefreshResponse['data']> {
+  const sources = VALID_SOURCES;
+  const total = sources.length;
+  let current = 0;
+
+  // ... 刷新逻辑，每处理完一个源更新进度
+  for (const source of sources) {
+    current++;
+    await updateTaskProgress(env, taskId, { current, total, currentSource: source });
+    // ... 处理源
+  }
+
+  return result;
+}
+```
 
 ### 前端实现
 
@@ -245,10 +478,20 @@ function useRefreshStatus(options?: UseRefreshStatusOptions): UseRefreshStatusRe
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `src/index.ts` | 修改 | 添加 GET /refresh/status 路由 |
+| `wrangler.jsonc` | 修改 | 添加 Queues 配置 (producer + consumer) |
+| `src/index.ts` | 修改 | 添加 queue handler + 新路由 |
 | `src/routes/refresh.ts` | 重构 | 异步刷新 + 状态管理 |
 | `src/services/storage.ts` | 修改 | 添加刷新状态存储方法 |
 | `src/types.ts` | 修改 | 添加刷新状态相关类型 |
+
+### 部署前准备
+
+1. **创建 Queue**:
+   ```bash
+   npx wrangler queues create refresh-queue
+   ```
+
+2. **更新 wrangler.jsonc** (见上文配置)
 
 ---
 
@@ -258,7 +501,7 @@ function useRefreshStatus(options?: UseRefreshStatusOptions): UseRefreshStatusRe
    - [ ] 下拉面板正常展开/收起
    - [ ] 选中的源以 Tag 形式显示
    - [ ] 支持"清空选择"和"全选"
-   - [ ] 全不选时显示空状态提示
+   - [ ] 全不选时不调用 API，显示空状态提示 "请选择至少一个数据源"
    - [ ] 点击外部自动收起面板
 
 2. **Toast**
@@ -268,7 +511,9 @@ function useRefreshStatus(options?: UseRefreshStatusOptions): UseRefreshStatusRe
 
 3. **刷新状态**
    - [ ] 点击刷新后按钮禁用
-   - [ ] 轮询状态正常工作
+   - [ ] 轮询状态正常工作（每 2 秒）
    - [ ] 完成后自动恢复按钮
    - [ ] 完成后自动刷新文章列表
-   - [ ] 并发控制生效（已有任务时不创建新任务）
+   - [ ] 并发控制生效（已有任务时返回现有 taskId）
+   - [ ] 刷新进行中时，再次点击不创建新任务
+   - [ ] 轮询失败时正确重试（最多 3 次）
