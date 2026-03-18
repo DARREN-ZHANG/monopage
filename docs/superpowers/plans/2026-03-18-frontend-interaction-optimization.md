@@ -650,32 +650,14 @@ export async function runRefresh(
 }
 ```
 
-- [ ] **Step 2: 更新 utils/response.ts 添加 jsonResponse**
+- [ ] **Step 2: 添加错误码到 errors.ts**
 
-在 `packages/api/src/utils/response.ts` 中添加：
-
-```typescript
-/**
- * 通用 JSON 响应
- */
-export function jsonResponse<T>(data: T, status: number = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-  });
-}
-```
-
-- [ ] **Step 3: 添加错误码到 errors.ts**
-
-在 `packages/api/src/utils/errors.ts` 的错误码映射中添加：
+在 `packages/api/src/utils/errors.ts` 的 `ErrorCodes` 对象中添加（在 VALIDATION 错误之后）：
 
 ```typescript
-'MISSING_TASK_ID': { code_num: 40001, message: 'taskId is required', retryable: false },
-'TASK_NOT_FOUND': { code_num: 40002, message: 'Task not found', retryable: false },
+  // 刷新任务错误 (25xx)
+  MISSING_TASK_ID: { code: 'MISSING_TASK_ID', num: 2501, http: 400, message: 'taskId is required', retryable: false },
+  TASK_NOT_FOUND: { code: 'TASK_NOT_FOUND', num: 2502, http: 404, message: 'Task not found', retryable: false },
 ```
 
 - [ ] **Step 4: Commit 刷新路由重构**
@@ -871,11 +853,22 @@ git commit -m "chore(web): add sonner for toast notifications"
 
 **Files:** Modify `packages/web/src/types/index.ts`
 
-- [ ] **Step 1: 添加刷新状态类型**
+- [ ] **Step 1: 添加刷新状态类型和常量**
 
 在 `packages/web/src/types/index.ts` 末尾添加：
 
 ```typescript
+// ===== 数据源常量 =====
+
+export const SOURCE_LABELS: Record<SourceType, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  codex: 'Codex',
+  opencode: 'OpenCode',
+};
+
+export const ALL_SOURCES: SourceType[] = ['openai', 'anthropic', 'codex', 'opencode'];
+
 // ===== 刷新状态类型 =====
 
 export type RefreshTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
