@@ -1,107 +1,86 @@
 import { AppError } from '../utils/errors.js';
 import { generateArticleId } from '../utils/id.js';
+import { cleanHtmlEntities, cleanHtmlTags, parseDateFlexible } from '../utils/html-parser.js';
 import { BaseSourceParser } from './base.js';
 import type { Article, SourceConfig } from '../types.js';
 
+/**
+ * Claude Code Changelog 解析器
+ * 抓取 https://code.claude.com/docs/en/changelog
+ */
 export class AnthropicSourceParser extends BaseSourceParser {
   constructor() {
     const config: SourceConfig = {
       name: 'anthropic',
-      baseUrl: 'https://www.anthropic.com',
-      newsUrl: 'https://www.anthropic.com/news',
+      baseUrl: 'https://code.claude.com',
+      newsUrl: 'https://code.claude.com/docs/en/changelog',
     };
     super(config);
   }
 
   async fetchArticles(timeoutMs: number): Promise<Article[]> {
-    const response = await this.fetchWithTimeout(this.newsUrl, timeoutMs);
+    const response = await this.fetchWithTimeout(this.config.newsUrl, timeoutMs);
 
     if (!response.ok) {
       throw new AppError('SOURCE_HTTP_ERROR');
     }
 
     const html = await response.text();
-    return this.parseNewsPage(html);
+    return this.parseChangelogPage(html);
   }
 
-  private parseNewsPage(html: string): Article[] {
+  private parseChangelogPage(html: string): Article[] {
     const articles: Article[] = [];
 
     try {
-      // Anthropic 新闻页面结构分析
-      const patterns = [
-        // 文章卡片包含链接和标题
-        /<a[^>]*href="(\/news\/[^"]*)"[^>]*>\s*<[^>]*>\s*<h[1-6][^>]*>([^<]+)<\/h[1-6]>/gi,
-        // article 标签内的链接
-        /<article[^>]*>[\s\S]*?<a[^>]*href="(\/news\/[^"]*)"[^>]*>[\s\S]*?<h[1-6][^>]*>([^<]+)<\/h[1-6]>/gi,
-      ];
+      // Claude Code changelog 使用 markdown 风格的标题
+      // 格式示例: ## March 14, 2025 或 ## v1.2.3
 
-      for (const pattern of patterns) {
-        let match;
-        while ((match = pattern.exec(html)) !== null) {
-          const relativeUrl = match[1];
-          const title = this.cleanHtmlEntities(match[2].trim());
-          const url = `${this.config.baseUrl}${relativeUrl}`;
-          const snippet = html.slice(Math.max(0, match.index - 300), Math.min(html.length, match.index + 700));
+      // 匹配版本块：以 ## 或 ### 开头的标题，直到下一个同级标题
+      const versionBlockRegex = /(?:^|\n)(?:#{2,3})\s*([^\n]+)\n([\s\S]*?)(?=(?:^|\n)#{2,3}\s|\Z)/g;
 
-          // 优先从页面片段提取日期，再回退 URL
-          const publishedAt = this.extractDateFromSnippet(snippet) || this.extractDateFromUrl(relativeUrl);
-          if (!publishedAt) {
-            continue;
-          }
+      let match;
+      while ((match = versionBlockRegex.exec(html)) !== null) {
+        const titleLine = cleanHtmlEntities(match[1].trim());
+        const contentBlock = match[2].trim();
 
-          const article: Article = {
-            id: generateArticleId('anthropic', url, title),
-            source: 'anthropic',
-            title,
-            url,
-            publishedAt: publishedAt.toISOString(),
-          };
+        // 解析标题行，可能是版本号或日期
+        const { version, date } = this.parseTitleLine(titleLine);
 
-          // 避免重复
-          if (!articles.some(a => a.id === article.id)) {
-            articles.push(article);
-          }
+        if (!date) {
+          continue;
+        }
+
+        // 生成文章标题
+        const articleTitle = version
+          ? `Claude Code ${version}`
+          : `Claude Code Update - ${titleLine}`;
+
+        // 提取内容摘要（前200字符或第一个列表项）
+        const summary = this.extractSummary(contentBlock);
+
+        const article: Article = {
+          id: generateArticleId('anthropic', this.config.newsUrl, articleTitle + date.toISOString()),
+          source: 'anthropic',
+          title: articleTitle,
+          url: this.config.newsUrl,
+          publishedAt: date.toISOString(),
+          content: summary,
+        };
+
+        // 避免重复
+        if (!articles.some(a => a.title === article.title && a.publishedAt === article.publishedAt)) {
+          articles.push(article);
         }
       }
 
-      // 如果上述模式没有匹配，尝试更宽松的匹配
+      // 如果上述正则没有匹配，尝试更通用的方式
       if (articles.length === 0) {
-        const linkPattern = /href="(\/news\/[^"]*)"[^>]*>/gi;
-        let linkMatch;
-        const seenUrls = new Set<string>();
-
-        while ((linkMatch = linkPattern.exec(html)) !== null) {
-          const url = linkMatch[1];
-          if (seenUrls.has(url) || url.includes('/news?page=')) {
-            continue;
-          }
-          seenUrls.add(url);
-
-          // 查找对应的标题
-          const fullUrl = `${this.config.baseUrl}${url}`;
-          const titlePattern = new RegExp(`href="${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>[\\s\\S]{0,200}?>([^<]{10,200})<`, 'i');
-          const titleMatch = html.match(titlePattern);
-
-          if (titleMatch) {
-            const title = this.cleanHtmlEntities(titleMatch[1].trim());
-            const snippet = html.slice(Math.max(0, linkMatch.index - 300), Math.min(html.length, linkMatch.index + 700));
-            const publishedAt = this.extractDateFromSnippet(snippet) || this.extractDateFromUrl(url);
-            if (!publishedAt) {
-              continue;
-            }
-
-            articles.push({
-              id: generateArticleId('anthropic', fullUrl, title),
-              source: 'anthropic',
-              title,
-              url: fullUrl,
-              publishedAt: publishedAt.toISOString(),
-            });
-          }
-        }
+        return this.parseFallback(html);
       }
+
     } catch (error) {
+      console.error('[anthropic] Parse error:', error);
       throw new AppError('SOURCE_PARSE_FAILED', error instanceof Error ? error : undefined);
     }
 
@@ -112,58 +91,94 @@ export class AnthropicSourceParser extends BaseSourceParser {
     return articles;
   }
 
-  private extractDateFromUrl(url: string): Date | null {
-    // Anthropic URL 格式: /news/announcing-claude-3-5-sonnet
-    const dateMatch = url.match(/(\d{4})-(\d{2})-(\d{2})/);
+  private parseTitleLine(titleLine: string): { version: string | null; date: Date | null } {
+    let version: string | null = null;
+    let date: Date | null = null;
+
+    // 尝试匹配版本号: v1.2.3 或 1.2.3
+    const versionMatch = titleLine.match(/v?(\d+\.\d+\.\d+)/i);
+    if (versionMatch) {
+      version = versionMatch[1];
+    }
+
+    // 尝试匹配日期: March 14, 2025 或 2025-03-14
+    const dateMatch = titleLine.match(/([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})|(\d{4}-\d{2}-\d{2})/);
     if (dateMatch) {
-      const date = new Date(`${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`);
-      if (!isNaN(date.getTime())) {
-        return date;
-      }
-    }
-    return null;
-  }
-
-  private extractDateFromSnippet(snippet: string): Date | null {
-    const datetimeAttr = snippet.match(/datetime="([^"]+)"/i)?.[1];
-    if (datetimeAttr) {
-      const parsed = new Date(datetimeAttr);
-      if (!isNaN(parsed.getTime())) {
-        return parsed;
-      }
+      date = parseDateFlexible(dateMatch[0]);
     }
 
-    const dateText =
-      snippet.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] ||
-      snippet.match(/\b[A-Z][a-z]{2,8}\s+\d{1,2},\s+\d{4}\b/)?.[0];
-    if (dateText) {
-      const parsed = new Date(dateText);
-      if (!isNaN(parsed.getTime())) {
-        return parsed;
-      }
-    }
-
-    return null;
+    return { version, date };
   }
 
-  private cleanHtmlEntities(text: string): string {
-    return text
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&nbsp;/g, ' ');
-  }
-
-  private cleanHtmlTags(html: string): string {
-    return html
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
+  private extractSummary(contentBlock: string): string {
+    // 移除 markdown 标记
+    let text = contentBlock
+      .replace(/```[\s\S]*?```/g, '[code]')
+      .replace(/`[^`]+`/g, '[code]')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[*_~#]/g, '')
+      .replace(/\n+/g, ' ')
       .trim();
+
+    // 限制长度
+    if (text.length > 300) {
+      text = text.slice(0, 297) + '...';
+    }
+
+    return text;
+  }
+
+  private parseFallback(html: string): Article[] {
+    const articles: Article[] = [];
+
+    // 清理 HTML 标签后的纯文本处理
+    const text = cleanHtmlTags(html);
+
+    // 尝试匹配日期行
+    const lines = text.split('\n');
+    let currentDate: Date | null = null;
+    let currentContent: string[] = [];
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+
+      // 检查是否是日期行
+      const date = parseDateFlexible(trimmedLine);
+      if (date) {
+        // 保存前一个块
+        if (currentDate && currentContent.length > 0) {
+          articles.push(this.createArticle(currentDate, currentContent.join(' ')));
+        }
+        currentDate = date;
+        currentContent = [];
+      } else if (currentDate) {
+        currentContent.push(trimmedLine);
+      }
+    }
+
+    // 保存最后一个块
+    if (currentDate && currentContent.length > 0) {
+      articles.push(this.createArticle(currentDate, currentContent.join(' ')));
+    }
+
+    return articles;
+  }
+
+  private createArticle(date: Date, content: string): Article {
+    const title = `Claude Code Update - ${date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+    return {
+      id: generateArticleId('anthropic', this.config.newsUrl, title + date.toISOString()),
+      source: 'anthropic',
+      title,
+      url: this.config.newsUrl,
+      publishedAt: date.toISOString(),
+      content: content.slice(0, 300),
+    };
   }
 
   async fetchArticleContent(url: string, timeoutMs: number): Promise<string> {
+    // Changelog 页面已经包含完整内容
     const response = await this.fetchWithTimeout(url, timeoutMs);
 
     if (!response.ok) {
@@ -171,27 +186,6 @@ export class AnthropicSourceParser extends BaseSourceParser {
     }
 
     const html = await response.text();
-
-    // 尝试提取文章正文
-    const contentMatch = html.match(/<main[^>]*>([\s\S]*?)<\/main>/i) ||
-                        html.match(/<article[^>]*>([\s\S]*?)<\/article>/i) ||
-                        html.match(/class="[^"]*post-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-
-    if (contentMatch) {
-      return this.cleanHtmlTags(contentMatch[1]);
-    }
-
-    // 备选方案：提取所有段落
-    const paragraphs: string[] = [];
-    const pRegex = /<p[^>]*>([\s\S]*?)<\/p>/gi;
-    let match;
-    while ((match = pRegex.exec(html)) !== null) {
-      const text = this.cleanHtmlTags(match[1]);
-      if (text.length > 50) {
-        paragraphs.push(text);
-      }
-    }
-
-    return paragraphs.join('\n\n');
+    return cleanHtmlTags(html).slice(0, 2000);
   }
 }
