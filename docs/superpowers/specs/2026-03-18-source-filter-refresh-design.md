@@ -134,6 +134,16 @@ const { data, isLoading, refetch, isFetching } = useQuery({
 });
 ```
 
+## 边界情况处理
+
+| 场景 | 前端行为 | 后端行为 |
+|------|----------|----------|
+| 全选 | 不传 sources 参数（或传空数组） | 返回所有来源的文章 |
+| 全不选 | 显示提示："请至少选择一个来源" | - |
+| 部分选择 | 传递选中的 sources 数组 | 仅返回选中来源的文章 |
+
+**URL 参数序列化**：使用逗号分隔 `sources=openai,anthropic`
+
 ## 数据流
 
 ```
@@ -150,9 +160,10 @@ const { data, isLoading, refetch, isFetching } = useQuery({
 | 序号 | 文件 | 操作 | 说明 |
 |------|------|------|------|
 | 1 | `packages/api/src/types.ts` | 修改 | 添加 `sources?: SourceType[]` |
-| 2 | `packages/api/src/routes/articles.ts` | 修改 | 支持 `sources` 多选参数 |
-| 3 | `packages/api/src/services/storage.ts` | 修改 | 支持多选筛选 |
-| 4 | `packages/web/src/types/index.ts` | 修改 | 同步 SourceType，添加 SOURCE_LABELS |
-| 5 | `packages/web/src/api/client.ts` | 修改 | 支持 sources 参数 |
-| 6 | `packages/web/src/components/Articles/FilterBar.tsx` | 新建 | 筛选栏组件 |
-| 7 | `packages/web/src/App.tsx` | 修改 | 集成 FilterBar |
+| 2 | `packages/api/src/routes/articles.ts` | 修改 | 修复 VALID_SOURCES，支持 sources 多选参数，更新 sources_included 逻辑 |
+| 3 | `packages/api/src/services/storage.ts` | 修改 | getSummariesByDateRange 支持多选筛选 |
+| 4 | `packages/web/src/types/index.ts` | 修改 | 同步 SourceType 为 4 种，添加 SOURCE_LABELS |
+| 5 | `packages/web/src/api/client.ts` | 修改 | getArticles 支持 sources 参数 |
+| 6 | `packages/web/src/hooks/useArticles.ts` | 修改 | 添加 sources 参数到接口和 queryKey |
+| 7 | `packages/web/src/components/Articles/FilterBar.tsx` | 新建 | 筛选栏组件 |
+| 8 | `packages/web/src/App.tsx` | 修改 | 集成 FilterBar，传递 sources 到 useArticles |
