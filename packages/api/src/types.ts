@@ -23,7 +23,7 @@ export interface ApiArticleSummary {
   published_at: string;
 }
 
-export type SourceType = 'openai' | 'anthropic';
+export type SourceType = 'openai' | 'anthropic' | 'codex' | 'opencode';
 
 export interface SourceConfig {
   name: SourceType;
