@@ -5,6 +5,8 @@ import type {
   MeResponse,
   LogoutResponse,
   RefreshResponse,
+  RefreshTriggerResponse,
+  RefreshStatusResponse,
   ApiErrorResponse,
   SourceType,
 } from '../types';
@@ -92,8 +94,20 @@ class ApiClient {
     return this.request<ArticlesResponse>(`/articles${query ? `?${query}` : ''}`);
   }
 
-  async refresh(): Promise<RefreshResponse> {
-    return this.request<RefreshResponse>('/refresh', { method: 'POST' });
+  /**
+   * 触发异步刷新任务
+   * 返回任务 ID，用于后续查询状态
+   */
+  async triggerRefresh(): Promise<RefreshTriggerResponse> {
+    return this.request<RefreshTriggerResponse>('/refresh', { method: 'POST' });
+  }
+
+  /**
+   * 查询刷新任务状态
+   * @param taskId - 刷新任务 ID
+   */
+  async getRefreshStatus(taskId: string): Promise<RefreshStatusResponse> {
+    return this.request<RefreshStatusResponse>(`/refresh/status?task_id=${taskId}`);
   }
 }
 
