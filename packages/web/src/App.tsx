@@ -8,31 +8,32 @@ import { LoginPage } from './components/Auth/LoginPage';
 import { ArticleList } from './components/Articles/ArticleList';
 import { EmptyState } from './components/Articles/EmptyState';
 import { ErrorState } from './components/Articles/ErrorState';
+import { FilterBar } from './components/Articles/FilterBar';
+import { ALL_SOURCES, SourceType } from './types';
 
 function App() {
   const { user, isLoading: authLoading, login, logout, error: authError } = useAuth();
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedSources, setSelectedSources] = useState<SourceType[]>(ALL_SOURCES);
 
   const {
     data: articlesData,
     isLoading: articlesLoading,
     error: articlesError,
     refetch,
+    isFetching,
   } = useArticles({
     days: 7,
     pageSize: 50,
+    sources: selectedSources.length < ALL_SOURCES.length ? selectedSources : undefined,
     enabled: !!user,
   });
 
   const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true);
     try {
       await api.refresh();
       refetch();
     } catch (error) {
       console.error('刷新失败:', error);
-    } finally {
-      setIsRefreshing(false);
     }
   }, [refetch]);
 
@@ -56,6 +57,13 @@ function App() {
       <Header username={user} onLogout={handleLogout} />
 
       <main className="max-w-content mx-auto px-4 py-8">
+        <FilterBar
+          selectedSources={selectedSources}
+          onSourcesChange={setSelectedSources}
+          onRefresh={handleRefresh}
+          isRefreshing={isFetching}
+        />
+
         {articlesLoading && (
           <div className="space-y-6">
             {[1, 2, 3].map((i) => (
@@ -84,7 +92,7 @@ function App() {
           <EmptyState
             message="暂无文章"
             onRefresh={handleRefresh}
-            isRefreshing={isRefreshing}
+            isRefreshing={isFetching}
           />
         )}
 
