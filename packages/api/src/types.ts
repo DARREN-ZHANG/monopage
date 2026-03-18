@@ -134,6 +134,7 @@ export interface LLMProvider {
 export interface Env {
   KV: KVNamespace;
   AI: Ai; // Cloudflare Workers AI binding
+  REFRESH_QUEUE: Queue<RefreshMessage>; // Cloudflare Queue binding
   API_TOKEN?: string;
   JWT_SECRET?: string;
   OPENAI_API_KEY?: string;
@@ -144,4 +145,47 @@ export interface Env {
   LLM_TIMEOUT_MS: string;
   SCRAPER_TIMEOUT_MS: string;
   HISTORY_DAYS: string;
+}
+
+// ===== 刷新队列相关类型 =====
+
+// Queue 消息
+export interface RefreshMessage {
+  taskId: string;
+  timestamp: string;
+}
+
+// 刷新任务状态
+export type RefreshTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+// 刷新进度
+export interface RefreshTaskProgress {
+  current: number;
+  total: number;
+  currentSource: SourceType;
+}
+
+// 刷新任务状态
+export interface RefreshTaskState {
+  taskId: string;
+  status: RefreshTaskStatus;
+  startedAt: string;
+  completedAt?: string;
+  progress?: RefreshTaskProgress;
+  result?: RefreshResponse['data'];
+  error?: string;
+}
+
+// API 响应类型
+export interface RefreshTriggerResponse {
+  success: true;
+  data: {
+    taskId: string;
+    status: 'pending';
+  };
+}
+
+export interface RefreshStatusResponse {
+  success: true;
+  data: RefreshTaskState;
 }
