@@ -35,7 +35,8 @@ export interface SourceConfig {
 
 export interface ArticlesQueryParams {
   date?: string; // YYYY-MM-DD
-  source?: SourceType;
+  source?: SourceType; // 保留兼容
+  sources?: SourceType[]; // 新增：多选
   days?: number; // 1-7
   page?: number; // >= 1
   pageSize?: number; // 1-50
