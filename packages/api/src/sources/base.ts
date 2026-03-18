@@ -51,14 +51,19 @@ export abstract class BaseSourceParser {
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+      console.log(`[fetchWithTimeout] Fetching ${url}`);
       const response = await fetch(url, {
         signal: controller.signal,
+        redirect: 'follow',
         headers: {
-          'User-Agent': 'Monopage-Bot/1.0 (News Aggregator)',
+          'User-Agent': 'Mozilla/5.0 (compatible; Monopage/1.0; +https://github.com/monopage)',
+          'Accept': 'application/rss+xml, application/xml, text/xml, */*',
         },
       });
+      console.log(`[fetchWithTimeout] Response: ${response.status} ${response.statusText}, ok=${response.ok}`);
       return response;
     } catch (error) {
+      console.error(`[fetchWithTimeout] Error:`, error);
       if (error instanceof Error && error.name === 'AbortError') {
         throw new AppError('SOURCE_TIMEOUT');
       }

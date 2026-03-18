@@ -52,6 +52,20 @@ export interface LogoutResponse {
   data: null;
 }
 
+export interface RefreshResponse {
+  success: true;
+  data: {
+    refreshed_sources: SourceType[];
+    articles_found: number;
+    articles_summarized: number;
+    articles_skipped: {
+      duplicate: number;
+      incomplete_metadata: number;
+    };
+    errors: string[];
+  };
+}
+
 export interface ApiErrorResponse {
   success: false;
   error: {

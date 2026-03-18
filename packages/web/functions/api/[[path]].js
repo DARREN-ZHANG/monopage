@@ -2,15 +2,10 @@
 const API_URL = 'https://monopage-api.ice-blue-zyr.workers.dev';
 
 export async function onRequest(context) {
-  const { request, next } = context;
+  const { request } = context;
   const url = new URL(request.url);
 
-  // 检查是否是 API 请求
-  if (!url.pathname.startsWith('/api/')) {
-    return next();
-  }
-
-  // 构建目标 URL
+  // 构建目标 URL - 移除 /api 前缀
   const targetPath = url.pathname.replace('/api', '');
   const targetUrl = `${API_URL}${targetPath}${url.search}`;
 

@@ -14,26 +14,37 @@ export class OpenAISourceParser extends BaseSourceParser {
   }
 
   async fetchArticles(timeoutMs: number): Promise<Article[]> {
-    // 尝试使用 RSS Feed
-    const rssUrl = 'https://openai.com/blog/rss.xml';
-    try {
-      const response = await this.fetchWithTimeout(rssUrl, timeoutMs);
-      if (response.ok) {
-        const xmlText = await response.text();
-        return this.parseRSSFeed(xmlText);
+    // 尝试使用 RSS Feed（新 URL）
+    const rssUrls = [
+      'https://openai.com/news/rss.xml',
+      'https://openai.com/blog/rss.xml', // 旧 URL 作为备用
+    ];
+
+    const debugInfo: any[] = [];
+
+    for (const rssUrl of rssUrls) {
+      try {
+        console.log(`[openai] Trying ${rssUrl}`);
+        const response = await this.fetchWithTimeout(rssUrl, timeoutMs);
+        console.log(`[openai] Response status: ${response.status}, ok: ${response.ok}`);
+
+        debugInfo.push({ url: rssUrl, status: response.status, ok: response.ok });
+
+        if (response.ok) {
+          const xmlText = await response.text();
+          console.log(`[openai] RSS content length: ${xmlText.length}`);
+          const articles = this.parseRSSFeed(xmlText);
+          console.log(`[openai] Parsed ${articles.length} articles`);
+          return articles;
+        }
+      } catch (err) {
+        console.error(`[openai] RSS ${rssUrl} error:`, err);
+        debugInfo.push({ url: rssUrl, error: String(err) });
       }
-    } catch {
-      // RSS 获取失败，回退到 HTML 解析
     }
 
-    // 回退：解析 HTML 页面
-    const response = await this.fetchWithTimeout(this.newsUrl, timeoutMs);
-    if (!response.ok) {
-      throw new AppError('SOURCE_HTTP_ERROR');
-    }
-
-    const html = await response.text();
-    return this.parseNewsPage(html);
+    // 所有 RSS 尝试失败，返回调试信息
+    throw new AppError('SOURCE_HTTP_ERROR', new Error(JSON.stringify(debugInfo)));
   }
 
   private parseRSSFeed(xmlText: string): Article[] {
@@ -131,7 +142,15 @@ export class OpenAISourceParser extends BaseSourceParser {
   }
 
   private extractTagContent(xml: string, tagName: string): string | null {
-    const regex = new RegExp(`<${tagName}[^>]*>([^<]*)<\/${tagName}>`, 'i');
+    // 尝试匹配 CDATA 内容
+    const cdataRegex = new RegExp(`<${tagName}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tagName}>`, 'i');
+    const cdataMatch = xml.match(cdataRegex);
+    if (cdataMatch) {
+      return cdataMatch[1].trim();
+    }
+
+    // 回退到普通内容匹配
+    const regex = new RegExp(`<${tagName}[^>]*>([^<]*)<\\/${tagName}>`, 'i');
     const match = xml.match(regex);
     return match ? match[1].trim() : null;
   }

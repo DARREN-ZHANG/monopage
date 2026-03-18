@@ -58,10 +58,12 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   // 返回成功响应并设置 HttpOnly Cookie
   const response = jsonResponse({ username });
 
-  // 设置 Cookie
+  // 设置 Cookie（本地开发不使用 Secure，生产环境使用）
+  const isHttps = new URL(request.url).protocol === 'https:';
+  const secureFlag = isHttps ? 'Secure;' : '';
   response.headers.set(
     'Set-Cookie',
-    `auth_token=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=604800`
+    `auth_token=${token}; HttpOnly; ${secureFlag}SameSite=Strict; Path=/; Max-Age=604800`
   );
 
   return response;

@@ -4,6 +4,7 @@ import type {
   LoginResponse,
   MeResponse,
   LogoutResponse,
+  RefreshResponse,
   ApiErrorResponse,
 } from '../types';
 import { AuthError, ApiError } from '../types';
@@ -75,10 +76,14 @@ class ApiClient {
     if (params.date) searchParams.set('date', params.date);
     if (params.days) searchParams.set('days', String(params.days));
     if (params.page) searchParams.set('page', String(params.page));
-    if (params.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    if (params.pageSize) searchParams.set('page_size', String(params.pageSize));
 
     const query = searchParams.toString();
     return this.request<ArticlesResponse>(`/articles${query ? `?${query}` : ''}`);
+  }
+
+  async refresh(): Promise<RefreshResponse> {
+    return this.request<RefreshResponse>('/refresh', { method: 'POST' });
   }
 }
 

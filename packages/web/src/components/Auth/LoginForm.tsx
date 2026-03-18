@@ -7,8 +7,8 @@ interface LoginFormProps {
 }
 
 export function LoginForm({ onSubmit, isLoading, error }: LoginFormProps) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('admin');
+  const [password, setPassword] = useState('admin123');
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent) => {

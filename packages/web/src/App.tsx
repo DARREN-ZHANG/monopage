@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { useArticles } from './hooks/useArticles';
+import { api } from './api/client';
 import { formatDateISO } from './utils/date';
 import { LoadingScreen } from './components/Layout/LoadingScreen';
 import { Header } from './components/Layout/Header';
@@ -11,7 +12,17 @@ import { ErrorState } from './components/Articles/ErrorState';
 
 function App() {
   const { user, isLoading: authLoading, login, logout, error: authError } = useAuth();
-  const [date, setDate] = useState(formatDateISO(new Date()));
+  const today = formatDateISO(new Date());
+  const [date, setDate] = useState(today);
+  const [hasSelectedDate, setHasSelectedDate] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setDate(today);
+      setHasSelectedDate(false);
+    }
+  }, [today, user]);
 
   const {
     data: articlesData,
@@ -19,11 +30,50 @@ function App() {
     error: articlesError,
     refetch,
   } = useArticles({
-    date,
+    date: hasSelectedDate ? date : undefined,
     days: 7,
+    pageSize: 50,
     enabled: !!user,
   });
 
+  // 所有 useCallback 必须在条件返回之前定义
+  const handleDateChange = useCallback((newDate: string) => {
+    setHasSelectedDate(true);
+    setDate(newDate);
+  }, []);
+
+  const handleGoToToday = useCallback(() => {
+    setHasSelectedDate(true);
+    setDate(today);
+  }, [today]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await api.refresh();
+      refetch();
+    } catch (error) {
+      console.error('刷新失败:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetch]);
+
+  useEffect(() => {
+    if (!user || hasSelectedDate || !articlesData) {
+      return;
+    }
+
+    const firstArticle = articlesData.data.articles[0];
+    if (firstArticle?.published_at) {
+      const latestArticleDate = firstArticle.published_at.slice(0, 10);
+      if (latestArticleDate) {
+        setDate(latestArticleDate);
+      }
+    }
+  }, [articlesData, hasSelectedDate, user]);
+
+  // 条件返回必须在所有 hooks 之后
   if (authLoading) {
     return <LoadingScreen />;
   }
@@ -32,14 +82,7 @@ function App() {
     return <LoginPage onLogin={login} isLoading={authLoading} error={authError} />;
   }
 
-  const articles = articlesData?.data.articles || [];
-  const handleDateChange = useCallback((newDate: string) => {
-    setDate(newDate);
-  }, []);
-
-  const handleGoToToday = useCallback(() => {
-    setDate(formatDateISO(new Date()));
-  }, []);
+  const articles = articlesData?.data?.articles || [];
 
   return (
     <div className="min-h-screen bg-bg-primary">
@@ -77,9 +120,11 @@ function App() {
 
         {!articlesLoading && !articlesError && articles.length === 0 && (
           <EmptyState
-            message="暂无文章"
-            onAction={handleGoToToday}
-            actionLabel="查看今天"
+            message={date === today ? '今天暂无文章' : '该日期暂无文章'}
+            onRefresh={handleRefresh}
+            onGoToToday={handleGoToToday}
+            isRefreshing={isRefreshing}
+            isToday={date === today}
           />
         )}
 
