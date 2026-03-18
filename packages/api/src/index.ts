@@ -4,10 +4,15 @@ import { handleArticles } from './routes/articles.js';
 import { handleLogin } from './routes/login.js';
 import { handleLogout } from './routes/logout.js';
 import { handleMe } from './routes/me.js';
-import { handleRefresh, runRefresh } from './routes/refresh.js';
+import {
+  handleRefreshTrigger,
+  handleRefreshStatus,
+  processRefreshMessage,
+  runRefresh,
+} from './routes/refresh.js';
 import { errorResponse, notFoundResponse } from './utils/response.js';
 import { AppError } from './utils/errors.js';
-import type { Env } from './types.js';
+import type { Env, RefreshMessage } from './types.js';
 
 // 导出默认对象，包含 fetch 和 scheduled 处理器
 export default {
@@ -60,9 +65,14 @@ export default {
         return handleArticles(request, env);
       }
 
-      // POST /refresh
+      // POST /refresh - 触发异步刷新
       if (path === '/refresh' && request.method === 'POST') {
-        return handleRefresh(request, env);
+        return handleRefreshTrigger(request, env);
+      }
+
+      // GET /refresh/status - 查询刷新状态
+      if (path === '/refresh/status' && request.method === 'GET') {
+        return handleRefreshStatus(request, env);
       }
 
       // 404 处理
@@ -90,6 +100,20 @@ export default {
       console.log('Cron refresh completed:', JSON.stringify(result, null, 2));
     } catch (error) {
       console.error('Cron execution error:', error);
+    }
+  },
+
+  /**
+   * 队列消息处理器
+   * 处理异步刷新任务
+   */
+  async queue(batch: Message<RefreshMessage>[], env: Env, ctx: ExecutionContext): Promise<void> {
+    for (const message of batch) {
+      try {
+        await processRefreshMessage(message.body, env);
+      } catch (error) {
+        console.error('Queue processing error:', error);
+      }
     }
   },
 };
