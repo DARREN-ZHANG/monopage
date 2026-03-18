@@ -1,4 +1,13 @@
-export type SourceType = 'openai' | 'anthropic';
+export type SourceType = 'openai' | 'anthropic' | 'codex' | 'opencode';
+
+export const SOURCE_LABELS: Record<SourceType, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  codex: 'Codex',
+  opencode: 'OpenCode',
+};
+
+export const ALL_SOURCES: SourceType[] = ['openai', 'anthropic', 'codex', 'opencode'];
 
 export interface Article {
   id: string;
