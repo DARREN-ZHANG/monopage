@@ -48,7 +48,7 @@ export async function runRefresh(
 
   for (const source of sourcesToRefresh) {
     try {
-      const scrapeResult = await scraper.scrapeSource(source, 24);
+      const scrapeResult = await scraper.scrapeSource(source, 24 * 7); // 最近 7 天
 
       if (scrapeResult.errors.length > 0) {
         allErrors.push(...scrapeResult.errors.map(e => `[${source}] ${e.code}: ${e.message}`));

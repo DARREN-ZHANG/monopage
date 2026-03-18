@@ -1,8 +1,7 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { useArticles } from './hooks/useArticles';
 import { api } from './api/client';
-import { formatDateISO } from './utils/date';
 import { LoadingScreen } from './components/Layout/LoadingScreen';
 import { Header } from './components/Layout/Header';
 import { LoginPage } from './components/Auth/LoginPage';
@@ -12,17 +11,7 @@ import { ErrorState } from './components/Articles/ErrorState';
 
 function App() {
   const { user, isLoading: authLoading, login, logout, error: authError } = useAuth();
-  const today = formatDateISO(new Date());
-  const [date, setDate] = useState(today);
-  const [hasSelectedDate, setHasSelectedDate] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  useEffect(() => {
-    if (!user) {
-      setDate(today);
-      setHasSelectedDate(false);
-    }
-  }, [today, user]);
 
   const {
     data: articlesData,
@@ -30,22 +19,10 @@ function App() {
     error: articlesError,
     refetch,
   } = useArticles({
-    date: hasSelectedDate ? date : undefined,
     days: 7,
     pageSize: 50,
     enabled: !!user,
   });
-
-  // 所有 useCallback 必须在条件返回之前定义
-  const handleDateChange = useCallback((newDate: string) => {
-    setHasSelectedDate(true);
-    setDate(newDate);
-  }, []);
-
-  const handleGoToToday = useCallback(() => {
-    setHasSelectedDate(true);
-    setDate(today);
-  }, [today]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -59,19 +36,9 @@ function App() {
     }
   }, [refetch]);
 
-  useEffect(() => {
-    if (!user || hasSelectedDate || !articlesData) {
-      return;
-    }
-
-    const firstArticle = articlesData.data.articles[0];
-    if (firstArticle?.published_at) {
-      const latestArticleDate = firstArticle.published_at.slice(0, 10);
-      if (latestArticleDate) {
-        setDate(latestArticleDate);
-      }
-    }
-  }, [articlesData, hasSelectedDate, user]);
+  const handleLogout = useCallback(async () => {
+    await logout();
+  }, [logout]);
 
   // 条件返回必须在所有 hooks 之后
   if (authLoading) {
@@ -86,12 +53,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-bg-primary">
-      <Header
-        username={user}
-        currentDate={date}
-        onDateChange={handleDateChange}
-        onLogout={logout}
-      />
+      <Header username={user} onLogout={handleLogout} />
 
       <main className="max-w-content mx-auto px-4 py-8">
         {articlesLoading && (
@@ -120,11 +82,9 @@ function App() {
 
         {!articlesLoading && !articlesError && articles.length === 0 && (
           <EmptyState
-            message={date === today ? '今天暂无文章' : '该日期暂无文章'}
+            message="暂无文章"
             onRefresh={handleRefresh}
-            onGoToToday={handleGoToToday}
             isRefreshing={isRefreshing}
-            isToday={date === today}
           />
         )}
 

@@ -144,14 +144,21 @@ function parseQueryParams(searchParams: URLSearchParams): ParsedArticlesQuery {
 }
 
 function calculateDateRange(params: ArticlesQueryParams): { fromDate: string; toDate: string } {
-  const days = params.days || 1;
+  const days = params.days || 7;
 
   if (params.date) {
-    // 指定了具体日期，返回该日期当天
-    return { fromDate: params.date, toDate: params.date };
+    // 指定了具体日期，返回该日期往前 N 天的范围
+    const toDate = new Date(params.date);
+    const fromDate = new Date(params.date);
+    fromDate.setDate(fromDate.getDate() - days + 1);
+
+    return {
+      fromDate: fromDate.toISOString().slice(0, 10),
+      toDate: toDate.toISOString().slice(0, 10),
+    };
   }
 
-  // 计算最近 N 天的范围
+  // 计算最近 N 天的范围（从今天开始）
   const toDate = new Date();
   const fromDate = new Date();
   fromDate.setDate(fromDate.getDate() - days + 1);
