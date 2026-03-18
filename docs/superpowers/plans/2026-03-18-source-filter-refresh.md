@@ -496,7 +496,7 @@ const [selectedSources, setSelectedSources] = useState<SourceType[]>(ALL_SOURCES
 
 - [ ] **Step 3: 修改 useArticles 调用**
 
-修改第 16-25 行：
+修改第 16-25 行，**添加 `isFetching` 到解构列表**，并添加 `sources` 参数：
 
 ```typescript
 const {
@@ -504,7 +504,7 @@ const {
   isLoading: articlesLoading,
   error: articlesError,
   refetch,
-  isFetching,
+  isFetching,  // 新增：用于刷新按钮状态
 } = useArticles({
   days: 7,
   pageSize: 50,
@@ -530,7 +530,7 @@ const handleRefresh = useCallback(async () => {
 
 - [ ] **Step 5: 在文章列表上方添加 FilterBar**
 
-在第 58 行的 `<main>` 标签后添加：
+在第 58 行的 `<main>` 标签后、条件渲染之前添加 FilterBar：
 
 ```tsx
 <main className="max-w-content mx-auto px-4 py-8">
@@ -540,6 +540,9 @@ const handleRefresh = useCallback(async () => {
     onRefresh={handleRefresh}
     isRefreshing={isFetching}
   />
+
+  {/* 保留原有的条件渲染 */}
+  {articlesLoading && (
 ```
 
 - [ ] **Step 6: 删除 isRefreshing 状态**
