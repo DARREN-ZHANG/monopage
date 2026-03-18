@@ -5,7 +5,7 @@ import { ScraperService } from '../services/scraper.js';
 import { SummarizerService } from '../services/summarizer.js';
 import type { RefreshRequest, RefreshResponse, Env, SourceType } from '../types.js';
 
-const VALID_SOURCES: SourceType[] = ['openai', 'anthropic'];
+const VALID_SOURCES: SourceType[] = ['openai', 'anthropic', 'codex', 'opencode'];
 
 /**
  * 处理 POST /refresh 请求

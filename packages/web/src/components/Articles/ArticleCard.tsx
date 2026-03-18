@@ -6,8 +6,15 @@ interface ArticleCardProps {
   article: Article;
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  codex: 'Codex',
+  opencode: 'OpenCode',
+};
+
 export function ArticleCard({ article }: ArticleCardProps) {
-  const sourceLabel = article.source === 'openai' ? 'OpenAI' : 'Anthropic';
+  const sourceLabel = SOURCE_LABELS[article.source] || article.source;
 
   return (
     <article className="bg-bg-primary border border-border rounded-lg p-6 hover:bg-bg-secondary transition-colors duration-200">

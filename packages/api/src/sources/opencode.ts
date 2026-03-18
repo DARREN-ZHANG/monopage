@@ -1,14 +1,28 @@
 import { AppError } from '../utils/errors.js';
 import { generateArticleId } from '../utils/id.js';
-import { cleanHtmlEntities, cleanHtmlTags, parseDateFlexible } from '../utils/html-parser.js';
+import { cleanHtmlTags } from '../utils/html-parser.js';
 import { BaseSourceParser } from './base.js';
 import type { Article, SourceConfig } from '../types.js';
 
 /**
+ * GitHub Release 数据结构
+ */
+interface GitHubRelease {
+  tag_name: string;
+  name: string;
+  published_at: string;
+  html_url: string;
+  body: string;
+}
+
+/**
  * OpenCode Changelog 解析器
- * 抓取 https://opencode.ai/changelog
+ * 使用 GitHub Releases API 获取 changelog 数据
  */
 export class OpenCodeSourceParser extends BaseSourceParser {
+  private readonly githubRepo = 'anomalyco/opencode';
+  private readonly githubApiUrl = `https://api.github.com/repos/${this.githubRepo}/releases`;
+
   constructor() {
     const config: SourceConfig = {
       name: 'opencode',
@@ -19,58 +33,72 @@ export class OpenCodeSourceParser extends BaseSourceParser {
   }
 
   async fetchArticles(timeoutMs: number): Promise<Article[]> {
-    const response = await this.fetchWithTimeout(this.config.newsUrl, timeoutMs);
+    // 使用 GitHub Releases API 获取数据
+    const response = await this.fetchWithTimeout(this.githubApiUrl, timeoutMs);
 
     if (!response.ok) {
       throw new AppError('SOURCE_HTTP_ERROR');
     }
 
-    const html = await response.text();
-    return this.parseChangelogPage(html);
+    const releases: GitHubRelease[] = await response.json();
+    return this.parseReleases(releases);
   }
 
-  private parseChangelogPage(html: string): Article[] {
+  private parseReleases(releases: GitHubRelease[]): Article[] {
     const articles: Article[] = [];
 
     try {
-      // OpenCode changelog 使用中文日期分组
-      // 格式: 2024年3月15日 -> 各组件更新 (Core, Desktop, TUI, SDK)
-
-      // 策略1: 匹配日期块
-      const dateBlockRegex = /(?:^|\n)(\d{4}年\d{1,2}月\d{1,2}日)[\s\S]*?(?=(?:^|\n)\d{4}年\d{1,2}月\d{1,2}日|\Z)/g;
-
-      let match;
-      while ((match = dateBlockRegex.exec(html)) !== null) {
-        const dateStr = match[1];
-        const contentBlock = match[0];
-
-        const date = parseDateFlexible(dateStr);
-        if (!date) {
+      for (const release of releases) {
+        if (!release.tag_name || !release.published_at || !release.html_url) {
           continue;
         }
 
-        // 尝试提取各组件的更新
-        const componentUpdates = this.parseComponentUpdates(contentBlock, date);
-
-        if (componentUpdates.length > 0) {
-          articles.push(...componentUpdates);
-        } else {
-          // 如果没有分组件，创建一个通用更新
-          const summary = this.extractSummary(contentBlock.replace(dateStr, ''));
-          articles.push({
-            id: generateArticleId('opencode', this.config.newsUrl, 'OpenCode Update' + date.toISOString()),
-            source: 'opencode',
-            title: `OpenCode Update - ${dateStr}`,
-            url: this.config.newsUrl,
-            publishedAt: date.toISOString(),
-            content: summary,
-          });
+        const date = new Date(release.published_at);
+        if (isNaN(date.getTime())) {
+          continue;
         }
-      }
 
-      // 如果没有匹配中文日期，尝试其他格式
-      if (articles.length === 0) {
-        return this.parseFallback(html);
+        // 生成文章 ID
+        const id = generateArticleId('opencode', release.html_url, release.tag_name);
+
+        // 解析 release body 中的更新内容
+        const content = this.parseReleaseBody(release.body || '');
+
+        // 确定组件类型
+        const components = this.detectComponents(release.body || '');
+
+        // 为每个组件创建单独的文章
+        if (components.length > 0) {
+          for (const component of components) {
+            const componentContent = this.extractComponentContent(release.body || '', component);
+            const article: Article = {
+              id: generateArticleId('opencode', release.html_url, `${release.tag_name}-${component}`),
+              source: 'opencode',
+              title: `[${component}] OpenCode ${release.tag_name}`,
+              url: release.html_url,
+              publishedAt: date.toISOString(),
+              content: componentContent || content,
+            };
+
+            if (!articles.some(a => a.id === article.id)) {
+              articles.push(article);
+            }
+          }
+        } else {
+          // 没有组件分类，创建通用文章
+          const article: Article = {
+            id,
+            source: 'opencode',
+            title: `OpenCode ${release.tag_name}`,
+            url: release.html_url,
+            publishedAt: date.toISOString(),
+            content,
+          };
+
+          if (!articles.some(a => a.id === article.id)) {
+            articles.push(article);
+          }
+        }
       }
 
     } catch (error) {
@@ -85,97 +113,55 @@ export class OpenCodeSourceParser extends BaseSourceParser {
     return articles;
   }
 
-  private parseComponentUpdates(contentBlock: string, date: Date): Article[] {
-    const articles: Article[] = [];
-    const components = ['Core', 'Desktop', 'TUI', 'SDK'];
-
-    for (const component of components) {
-      // 匹配组件块：## Core 或 **Core** 等
-      const componentRegex = new RegExp(
-        `(?:#{2,3}|\\*\\*)\\s*${component}[\\s\\S]*?(?=(?:#{2,3}|\\*\\*)\\s*(?:Core|Desktop|TUI|SDK)|\\Z)`,
-        'gi'
-      );
-
-      const match = contentBlock.match(componentRegex);
-      if (match) {
-        const summary = this.extractSummary(match[0]);
-        articles.push({
-          id: generateArticleId('opencode', this.config.newsUrl, `${component} ${date.toISOString()}`),
-          source: 'opencode',
-          title: `OpenCode ${component} Update`,
-          url: this.config.newsUrl,
-          publishedAt: date.toISOString(),
-          content: summary,
-        });
-      }
-    }
-
-    return articles;
-  }
-
-  private extractSummary(contentBlock: string): string {
-    let text = contentBlock
+  private parseReleaseBody(body: string): string {
+    // 清理 Markdown 格式，保留纯文本
+    let text = body
       .replace(/```[\s\S]*?```/g, '[code]')
       .replace(/`[^`]+`/g, '[code]')
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/[*_~#]/g, '')
-      .replace(/\d{4}年\d{1,2}月\d{1,2}日/g, '')
+      .replace(/#{1,6}\s*/g, '')
+      .replace(/[*_~]/g, '')
       .replace(/\n+/g, ' ')
       .trim();
 
-    if (text.length > 300) {
-      text = text.slice(0, 297) + '...';
+    if (text.length > 500) {
+      text = text.slice(0, 497) + '...';
     }
 
     return text;
   }
 
-  private parseFallback(html: string): Article[] {
-    const articles: Article[] = [];
-    const text = cleanHtmlTags(html);
-    const lines = text.split('\n');
+  private detectComponents(body: string): string[] {
+    const components: string[] = [];
+    const componentPatterns = [
+      { name: 'Core', pattern: /(?:^|\n)#{1,3}\s*Core\s*\n/i },
+      { name: 'Desktop', pattern: /(?:^|\n)#{1,3}\s*Desktop\s*\n/i },
+      { name: 'TUI', pattern: /(?:^|\n)#{1,3}\s*TUI\s*\n/i },
+      { name: 'SDK', pattern: /(?:^|\n)#{1,3}\s*SDK\s*\n/i },
+    ];
 
-    let currentDate: Date | null = null;
-    let currentContent: string[] = [];
-
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-      if (!trimmedLine) continue;
-
-      const date = parseDateFlexible(trimmedLine);
-
-      if (date) {
-        if (currentDate && currentContent.length > 0) {
-          articles.push({
-            id: generateArticleId('opencode', this.config.newsUrl, currentDate.toISOString()),
-            source: 'opencode',
-            title: 'OpenCode Update',
-            url: this.config.newsUrl,
-            publishedAt: currentDate.toISOString(),
-            content: currentContent.join(' ').slice(0, 300),
-          });
-        }
-
-        currentDate = date;
-        currentContent = [];
-      } else if (currentDate) {
-        currentContent.push(trimmedLine);
+    for (const { name, pattern } of componentPatterns) {
+      if (pattern.test(body)) {
+        components.push(name);
       }
     }
 
-    // 保存最后一个块
-    if (currentDate && currentContent.length > 0) {
-      articles.push({
-        id: generateArticleId('opencode', this.config.newsUrl, currentDate.toISOString()),
-        source: 'opencode',
-        title: 'OpenCode Update',
-        url: this.config.newsUrl,
-        publishedAt: currentDate.toISOString(),
-        content: currentContent.join(' ').slice(0, 300),
-      });
+    return components;
+  }
+
+  private extractComponentContent(body: string, component: string): string {
+    // 提取特定组件的内容
+    const regex = new RegExp(
+      `(?:^|\\n)#{1,3}\\s*${component}\\s*\\n([\\s\\S]*?)(?=(?:^|\\n)#{1,3}\\s*(?:Core|Desktop|TUI|SDK)\\s*\\n|$)`,
+      'i'
+    );
+
+    const match = body.match(regex);
+    if (match) {
+      return this.parseReleaseBody(match[1]);
     }
 
-    return articles;
+    return '';
   }
 
   async fetchArticleContent(url: string, timeoutMs: number): Promise<string> {

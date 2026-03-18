@@ -6,7 +6,7 @@ import type { Article, SourceConfig } from '../types.js';
 
 /**
  * Claude Code Changelog 解析器
- * 抓取 https://code.claude.com/docs/en/changelog
+ * 使用 RSS feed 获取 changelog 数据
  */
 export class AnthropicSourceParser extends BaseSourceParser {
   constructor() {
@@ -19,64 +19,73 @@ export class AnthropicSourceParser extends BaseSourceParser {
   }
 
   async fetchArticles(timeoutMs: number): Promise<Article[]> {
-    const response = await this.fetchWithTimeout(this.config.newsUrl, timeoutMs);
+    // 使用 RSS feed 获取结构化数据
+    const rssUrl = 'https://code.claude.com/docs/en/changelog/rss.xml';
+    const response = await this.fetchWithTimeout(rssUrl, timeoutMs);
 
     if (!response.ok) {
       throw new AppError('SOURCE_HTTP_ERROR');
     }
 
-    const html = await response.text();
-    return this.parseChangelogPage(html);
+    const xml = await response.text();
+    return this.parseRssFeed(xml);
   }
 
-  private parseChangelogPage(html: string): Article[] {
+  private parseRssFeed(xml: string): Article[] {
     const articles: Article[] = [];
 
     try {
-      // Claude Code changelog 使用 markdown 风格的标题
-      // 格式示例: ## March 14, 2025 或 ## v1.2.3
-
-      // 匹配版本块：以 ## 或 ### 开头的标题，直到下一个同级标题
-      const versionBlockRegex = /(?:^|\n)(?:#{2,3})\s*([^\n]+)\n([\s\S]*?)(?=(?:^|\n)#{2,3}\s|\Z)/g;
+      // 解析 RSS feed 中的 item
+      // RSS 格式: <item><title>...</title><link>...</link><pubDate>...</pubDate><content:encoded>...</content:encoded></item>
+      const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
 
       let match;
-      while ((match = versionBlockRegex.exec(html)) !== null) {
-        const titleLine = cleanHtmlEntities(match[1].trim());
-        const contentBlock = match[2].trim();
+      while ((match = itemRegex.exec(xml)) !== null) {
+        const itemContent = match[1];
 
-        // 解析标题行，可能是版本号或日期
-        const { version, date } = this.parseTitleLine(titleLine);
+        const title = this.extractTag(itemContent, 'title');
+        const link = this.extractTag(itemContent, 'link');
+        const pubDate = this.extractTag(itemContent, 'pubDate');
+        const contentEncoded = this.extractTag(itemContent, 'content:encoded');
 
+        if (!title || !link || !pubDate) {
+          continue;
+        }
+
+        const date = parseDateFlexible(pubDate);
         if (!date) {
           continue;
         }
 
-        // 生成文章标题
-        const articleTitle = version
-          ? `Claude Code ${version}`
-          : `Claude Code Update - ${titleLine}`;
+        // 生成文章 ID
+        const id = generateArticleId('anthropic', link, title);
 
-        // 提取内容摘要（前200字符或第一个列表项）
-        const summary = this.extractSummary(contentBlock);
+        // 提取内容 - 清理 HTML 标签
+        let content = cleanHtmlTags(cleanHtmlEntities(contentEncoded || ''));
+
+        // 限制内容长度
+        if (content.length > 500) {
+          content = content.slice(0, 497) + '...';
+        }
+
+        // 标题格式: "2.1.78" -> "Claude Code 2.1.78"
+        const articleTitle = title.match(/^\d+\.\d+\.\d+/)
+          ? `Claude Code ${title}`
+          : title;
 
         const article: Article = {
-          id: generateArticleId('anthropic', this.config.newsUrl, articleTitle + date.toISOString()),
+          id,
           source: 'anthropic',
           title: articleTitle,
-          url: this.config.newsUrl,
+          url: link,
           publishedAt: date.toISOString(),
-          content: summary,
+          content,
         };
 
-        // 避免重复
-        if (!articles.some(a => a.title === article.title && a.publishedAt === article.publishedAt)) {
+        // 去重
+        if (!articles.some(a => a.id === article.id)) {
           articles.push(article);
         }
-      }
-
-      // 如果上述正则没有匹配，尝试更通用的方式
-      if (articles.length === 0) {
-        return this.parseFallback(html);
       }
 
     } catch (error) {
@@ -91,94 +100,15 @@ export class AnthropicSourceParser extends BaseSourceParser {
     return articles;
   }
 
-  private parseTitleLine(titleLine: string): { version: string | null; date: Date | null } {
-    let version: string | null = null;
-    let date: Date | null = null;
-
-    // 尝试匹配版本号: v1.2.3 或 1.2.3
-    const versionMatch = titleLine.match(/v?(\d+\.\d+\.\d+)/i);
-    if (versionMatch) {
-      version = versionMatch[1];
-    }
-
-    // 尝试匹配日期: March 14, 2025 或 2025-03-14
-    const dateMatch = titleLine.match(/([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})|(\d{4}-\d{2}-\d{2})/);
-    if (dateMatch) {
-      date = parseDateFlexible(dateMatch[0]);
-    }
-
-    return { version, date };
-  }
-
-  private extractSummary(contentBlock: string): string {
-    // 移除 markdown 标记
-    let text = contentBlock
-      .replace(/```[\s\S]*?```/g, '[code]')
-      .replace(/`[^`]+`/g, '[code]')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/[*_~#]/g, '')
-      .replace(/\n+/g, ' ')
-      .trim();
-
-    // 限制长度
-    if (text.length > 300) {
-      text = text.slice(0, 297) + '...';
-    }
-
-    return text;
-  }
-
-  private parseFallback(html: string): Article[] {
-    const articles: Article[] = [];
-
-    // 清理 HTML 标签后的纯文本处理
-    const text = cleanHtmlTags(html);
-
-    // 尝试匹配日期行
-    const lines = text.split('\n');
-    let currentDate: Date | null = null;
-    let currentContent: string[] = [];
-
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-      if (!trimmedLine) continue;
-
-      // 检查是否是日期行
-      const date = parseDateFlexible(trimmedLine);
-      if (date) {
-        // 保存前一个块
-        if (currentDate && currentContent.length > 0) {
-          articles.push(this.createArticle(currentDate, currentContent.join(' ')));
-        }
-        currentDate = date;
-        currentContent = [];
-      } else if (currentDate) {
-        currentContent.push(trimmedLine);
-      }
-    }
-
-    // 保存最后一个块
-    if (currentDate && currentContent.length > 0) {
-      articles.push(this.createArticle(currentDate, currentContent.join(' ')));
-    }
-
-    return articles;
-  }
-
-  private createArticle(date: Date, content: string): Article {
-    const title = `Claude Code Update - ${date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
-    return {
-      id: generateArticleId('anthropic', this.config.newsUrl, title + date.toISOString()),
-      source: 'anthropic',
-      title,
-      url: this.config.newsUrl,
-      publishedAt: date.toISOString(),
-      content: content.slice(0, 300),
-    };
+  private extractTag(content: string, tagName: string): string {
+    // 处理带命名空间的标签 (如 content:encoded)
+    // 支持两种格式: <tag>value</tag> 和 <tag><![CDATA[value]]></tag>
+    const regex = new RegExp(`<${tagName}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\/${tagName}>`, 'i');
+    const match = content.match(regex);
+    return match ? match[1].trim() : '';
   }
 
   async fetchArticleContent(url: string, timeoutMs: number): Promise<string> {
-    // Changelog 页面已经包含完整内容
     const response = await this.fetchWithTimeout(url, timeoutMs);
 
     if (!response.ok) {

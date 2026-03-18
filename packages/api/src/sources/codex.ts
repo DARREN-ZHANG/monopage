@@ -6,7 +6,7 @@ import type { Article, SourceConfig } from '../types.js';
 
 /**
  * OpenAI Codex Changelog 解析器
- * 抓取 https://developers.openai.com/codex/changelog
+ * 使用 RSS feed 获取 changelog 数据
  */
 export class CodexSourceParser extends BaseSourceParser {
   constructor() {
@@ -19,62 +19,74 @@ export class CodexSourceParser extends BaseSourceParser {
   }
 
   async fetchArticles(timeoutMs: number): Promise<Article[]> {
-    const response = await this.fetchWithTimeout(this.config.newsUrl, timeoutMs);
+    // 使用 RSS feed 获取结构化数据
+    const rssUrl = 'https://developers.openai.com/codex/changelog/rss.xml';
+    const response = await this.fetchWithTimeout(rssUrl, timeoutMs);
 
     if (!response.ok) {
       throw new AppError('SOURCE_HTTP_ERROR');
     }
 
-    const html = await response.text();
-    return this.parseChangelogPage(html);
+    const xml = await response.text();
+    return this.parseRssFeed(xml);
   }
 
-  private parseChangelogPage(html: string): Article[] {
+  private parseRssFeed(xml: string): Article[] {
     const articles: Article[] = [];
 
     try {
-      // Codex changelog 分为 CLI 和 App 两个区域
-      // 格式通常是版本号 + 日期 + 更新内容
-
-      // 策略1: 匹配版本块 (## 或 ### 标题)
-      const versionBlockRegex = /(?:^|\n)(?:#{2,4})\s*([^\n]+)\n([\s\S]*?)(?=(?:^|\n)#{2,4}\s|\Z)/g;
+      // 解析 RSS feed 中的 item
+      // RSS 格式: <item><title>...</title><link>...</link><pubDate>...</pubDate><content:encoded>...</content:encoded></item>
+      const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
 
       let match;
-      while ((match = versionBlockRegex.exec(html)) !== null) {
-        const titleLine = cleanHtmlEntities(match[1].trim());
-        const contentBlock = match[2].trim();
+      while ((match = itemRegex.exec(xml)) !== null) {
+        const itemContent = match[1];
 
-        const { version, component, date } = this.parseTitleLine(titleLine);
+        const title = this.extractTag(itemContent, 'title');
+        const link = this.extractTag(itemContent, 'link');
+        const pubDate = this.extractTag(itemContent, 'pubDate');
+        const description = this.extractTag(itemContent, 'description');
+        const contentEncoded = this.extractTag(itemContent, 'content:encoded');
 
+        if (!title || !link || !pubDate) {
+          continue;
+        }
+
+        const date = parseDateFlexible(pubDate);
         if (!date) {
           continue;
         }
 
-        // 生成标题
-        const prefix = component ? `[${component}] ` : '';
-        const articleTitle = version
-          ? `${prefix}Codex ${version}`
-          : `${prefix}Codex Update - ${titleLine}`;
+        // 生成文章 ID
+        const id = generateArticleId('codex', link, title);
 
-        const summary = this.extractSummary(contentBlock);
+        // 提取内容 - 优先使用 content:encoded，否则使用 description
+        let content = contentEncoded || description || '';
+        content = cleanHtmlTags(cleanHtmlEntities(content));
+
+        // 限制内容长度
+        if (content.length > 500) {
+          content = content.slice(0, 497) + '...';
+        }
+
+        // 确定组件类型 (CLI, App, Desktop 等)
+        const component = this.detectComponent(title);
+        const articleTitle = component ? `[${component}] ${title}` : title;
 
         const article: Article = {
-          id: generateArticleId('codex', this.config.newsUrl, articleTitle + date.toISOString()),
+          id,
           source: 'codex',
           title: articleTitle,
-          url: this.config.newsUrl,
+          url: link,
           publishedAt: date.toISOString(),
-          content: summary,
+          content,
         };
 
-        if (!articles.some(a => a.title === article.title && a.publishedAt === article.publishedAt)) {
+        // 去重
+        if (!articles.some(a => a.id === article.id)) {
           articles.push(article);
         }
-      }
-
-      // 如果没有匹配，尝试备用解析
-      if (articles.length === 0) {
-        return this.parseFallback(html);
       }
 
     } catch (error) {
@@ -89,111 +101,27 @@ export class CodexSourceParser extends BaseSourceParser {
     return articles;
   }
 
-  private parseTitleLine(titleLine: string): { version: string | null; component: string | null; date: Date | null } {
-    let version: string | null = null;
-    let component: string | null = null;
-    let date: Date | null = null;
-
-    // 检测组件类型 (CLI, App, Desktop 等)
-    if (/cli/i.test(titleLine)) {
-      component = 'CLI';
-    } else if (/app/i.test(titleLine) || /desktop/i.test(titleLine)) {
-      component = 'App';
-    }
-
-    // 匹配版本号
-    const versionMatch = titleLine.match(/v?(\d+\.\d+(?:\.\d+)?)/i);
-    if (versionMatch) {
-      version = versionMatch[1];
-    }
-
-    // 匹配日期
-    const datePatterns = [
-      /([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})/,
-      /(\d{4}-\d{2}-\d{2})/,
-      /(\d{1,2}\/\d{1,2}\/\d{4})/,
-    ];
-
-    for (const pattern of datePatterns) {
-      const match = titleLine.match(pattern);
-      if (match) {
-        date = parseDateFlexible(match[1]);
-        if (date) break;
-      }
-    }
-
-    return { version, component, date };
+  private extractTag(content: string, tagName: string): string {
+    // 处理带命名空间的标签 (如 content:encoded)
+    const regex = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\/${tagName}>`, 'i');
+    const match = content.match(regex);
+    return match ? match[1].trim() : '';
   }
 
-  private extractSummary(contentBlock: string): string {
-    let text = contentBlock
-      .replace(/```[\s\S]*?```/g, '[code]')
-      .replace(/`[^`]+`/g, '[code]')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/[*_~#]/g, '')
-      .replace(/\n+/g, ' ')
-      .trim();
+  private detectComponent(title: string): string | null {
+    const lowerTitle = title.toLowerCase();
 
-    if (text.length > 300) {
-      text = text.slice(0, 297) + '...';
+    if (lowerTitle.includes('cli') || lowerTitle.includes('release:')) {
+      return 'CLI';
+    }
+    if (lowerTitle.includes('app') || lowerTitle.includes('desktop')) {
+      return 'App';
+    }
+    if (lowerTitle.includes('api')) {
+      return 'API';
     }
 
-    return text;
-  }
-
-  private parseFallback(html: string): Article[] {
-    const articles: Article[] = [];
-    const text = cleanHtmlTags(html);
-    const lines = text.split('\n');
-
-    let currentDate: Date | null = null;
-    let currentContent: string[] = [];
-    let currentVersion: string | null = null;
-
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-      if (!trimmedLine) continue;
-
-      const date = parseDateFlexible(trimmedLine);
-      const versionMatch = trimmedLine.match(/v?(\d+\.\d+\.\d+)/i);
-
-      if (date || versionMatch) {
-        if (currentDate && currentContent.length > 0) {
-          const title = currentVersion
-            ? `Codex ${currentVersion}`
-            : `Codex Update`;
-          articles.push({
-            id: generateArticleId('codex', this.config.newsUrl, title + currentDate.toISOString()),
-            source: 'codex',
-            title,
-            url: this.config.newsUrl,
-            publishedAt: currentDate.toISOString(),
-            content: currentContent.join(' ').slice(0, 300),
-          });
-        }
-
-        currentDate = date;
-        currentVersion = versionMatch ? versionMatch[1] : null;
-        currentContent = [];
-      } else if (currentDate) {
-        currentContent.push(trimmedLine);
-      }
-    }
-
-    // 保存最后一个块
-    if (currentDate && currentContent.length > 0) {
-      const title = currentVersion ? `Codex ${currentVersion}` : 'Codex Update';
-      articles.push({
-        id: generateArticleId('codex', this.config.newsUrl, title + currentDate.toISOString()),
-        source: 'codex',
-        title,
-        url: this.config.newsUrl,
-        publishedAt: currentDate.toISOString(),
-        content: currentContent.join(' ').slice(0, 300),
-      });
-    }
-
-    return articles;
+    return null;
   }
 
   async fetchArticleContent(url: string, timeoutMs: number): Promise<string> {
