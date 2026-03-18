@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { ArticlesResponse } from '../types';
+import type { ArticlesResponse, SourceType } from '../types';
 import { AuthError } from '../types';
 
 interface UseArticlesParams {
@@ -8,15 +8,16 @@ interface UseArticlesParams {
   days?: number;
   page?: number;
   pageSize?: number;
+  sources?: SourceType[];
   enabled?: boolean;
 }
 
 export function useArticles(params: UseArticlesParams = {}) {
-  const { date, days = 7, page = 1, pageSize = 50, enabled = true } = params;
+  const { date, days = 7, page = 1, pageSize = 50, sources, enabled = true } = params;
 
   return useQuery<ArticlesResponse, Error>({
-    queryKey: ['articles', { date, days, page, pageSize }],
-    queryFn: () => api.getArticles({ date, days, page, pageSize }),
+    queryKey: ['articles', { date, days, page, pageSize, sources }],
+    queryFn: () => api.getArticles({ date, days, page, pageSize, sources }),
     enabled,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
