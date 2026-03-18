@@ -6,6 +6,7 @@ import type {
   LogoutResponse,
   RefreshResponse,
   ApiErrorResponse,
+  SourceType,
 } from '../types';
 import { AuthError, ApiError } from '../types';
 
@@ -71,12 +72,21 @@ class ApiClient {
     return this.request<MeResponse>('/me');
   }
 
-  async getArticles(params: { date?: string; days?: number; page?: number; pageSize?: number }): Promise<ArticlesResponse> {
+  async getArticles(params: {
+    date?: string;
+    days?: number;
+    page?: number;
+    pageSize?: number;
+    sources?: SourceType[];
+  }): Promise<ArticlesResponse> {
     const searchParams = new URLSearchParams();
     if (params.date) searchParams.set('date', params.date);
     if (params.days) searchParams.set('days', String(params.days));
     if (params.page) searchParams.set('page', String(params.page));
     if (params.pageSize) searchParams.set('page_size', String(params.pageSize));
+    if (params.sources && params.sources.length > 0) {
+      searchParams.set('sources', params.sources.join(','));
+    }
 
     const query = searchParams.toString();
     return this.request<ArticlesResponse>(`/articles${query ? `?${query}` : ''}`);
