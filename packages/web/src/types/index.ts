@@ -105,3 +105,36 @@ export class ApiError extends Error {
     this.retryable = response.error.retryable;
   }
 }
+
+// ===== 刷新状态类型 =====
+
+export type RefreshTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface RefreshTaskProgress {
+  current: number;
+  total: number;
+  currentSource: SourceType;
+}
+
+export interface RefreshTaskState {
+  taskId: string;
+  status: RefreshTaskStatus;
+  startedAt: string;
+  completedAt?: string;
+  progress?: RefreshTaskProgress;
+  result?: RefreshResponse['data'];
+  error?: string;
+}
+
+export interface RefreshTriggerResponse {
+  success: true;
+  data: {
+    taskId: string;
+    status: 'pending';
+  };
+}
+
+export interface RefreshStatusResponse {
+  success: true;
+  data: RefreshTaskState;
+}
