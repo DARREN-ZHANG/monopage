@@ -1,5 +1,5 @@
 import { AppError } from '../utils/errors.js';
-import type { ArticleSummary, SourceType, IndexEntry } from '../types.js';
+import type { ArticleSummary, SourceType, IndexEntry, RefreshTaskState } from '../types.js';
 import type { Env } from '../types.js';
 
 const INDEX_PREFIX = 'index';
@@ -11,6 +11,12 @@ const SUMMARY_PREFIX = 'summary';
 export class StorageService {
   private kv: KVNamespace;
   private historyDays: number;
+
+  // ===== 刷新状态相关常量 =====
+  private readonly REFRESH_STATUS_PREFIX = 'refresh:status';
+  private readonly REFRESH_CURRENT_KEY = 'refresh:current';
+  private readonly REFRESH_STATUS_TTL = 3600; // 1 hour
+  private readonly REFRESH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
   constructor(env: Env) {
     this.kv = env.KV;
@@ -276,5 +282,77 @@ export class StorageService {
     } catch {
       return null;
     }
+  }
+
+  // ===== 刷新状态管理 =====
+
+  /**
+   * 保存刷新任务状态
+   */
+  async saveRefreshTaskState(state: RefreshTaskState): Promise<void> {
+    const key = `${this.REFRESH_STATUS_PREFIX}:${state.taskId}`;
+    try {
+      await this.kv.put(key, JSON.stringify(state), {
+        expirationTtl: this.REFRESH_STATUS_TTL,
+      });
+    } catch (error) {
+      throw new AppError('KV_WRITE_FAILED', error instanceof Error ? error : undefined);
+    }
+  }
+
+  /**
+   * 获取刷新任务状态
+   */
+  async getRefreshTaskState(taskId: string): Promise<RefreshTaskState | null> {
+    const key = `${this.REFRESH_STATUS_PREFIX}:${taskId}`;
+    try {
+      const value = await this.kv.get(key);
+      return value ? JSON.parse(value) as RefreshTaskState : null;
+    } catch (error) {
+      throw new AppError('KV_READ_FAILED', error instanceof Error ? error : undefined);
+    }
+  }
+
+  /**
+   * 设置当前刷新任务 ID
+   */
+  async setCurrentRefreshTask(taskId: string): Promise<void> {
+    try {
+      await this.kv.put(this.REFRESH_CURRENT_KEY, taskId, {
+        expirationTtl: this.REFRESH_STATUS_TTL,
+      });
+    } catch (error) {
+      throw new AppError('KV_WRITE_FAILED', error instanceof Error ? error : undefined);
+    }
+  }
+
+  /**
+   * 获取当前刷新任务 ID
+   */
+  async getCurrentRefreshTask(): Promise<string | null> {
+    try {
+      return await this.kv.get(this.REFRESH_CURRENT_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 清除当前刷新任务 ID
+   */
+  async clearCurrentRefreshTask(): Promise<void> {
+    try {
+      await this.kv.delete(this.REFRESH_CURRENT_KEY);
+    } catch {
+      // 忽略删除错误
+    }
+  }
+
+  /**
+   * 检查刷新任务是否超时
+   */
+  isRefreshTimedOut(startedAt: string): boolean {
+    const started = new Date(startedAt).getTime();
+    return Date.now() - started > this.REFRESH_TIMEOUT_MS;
   }
 }
