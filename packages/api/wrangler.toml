@@ -35,3 +35,13 @@ LLM_PROVIDER = "cloudflare"
 [dev]
 port = 8787
 local_protocol = "http"
+
+# Queue 配置 - 异步刷新
+[[queues.producers]]
+queue = "refresh-queue"
+binding = "REFRESH_QUEUE"
+
+[[queues.consumers]]
+queue = "refresh-queue"
+max_batch_size = 1
+max_batch_timeout = 1
