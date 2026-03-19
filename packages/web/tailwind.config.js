@@ -14,7 +14,7 @@ export default {
         },
       },
       maxWidth: {
-        content: '672px',
+        content: '896px', // 放宽宽度，防止刷新按钮换行
       },
     },
   },

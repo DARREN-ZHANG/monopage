@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react';
+import { Toaster } from 'sonner';
 import { useAuth } from './hooks/useAuth';
 import { useArticles } from './hooks/useArticles';
-import { api } from './api/client';
+import { useRefreshStatus } from './hooks/useRefreshStatus';
 import { LoadingScreen } from './components/Layout/LoadingScreen';
 import { Header } from './components/Layout/Header';
 import { LoginPage } from './components/Auth/LoginPage';
@@ -20,22 +21,24 @@ function App() {
     isLoading: articlesLoading,
     error: articlesError,
     refetch,
-    isFetching,
   } = useArticles({
     days: 7,
     pageSize: 50,
-    sources: selectedSources.length < ALL_SOURCES.length ? selectedSources : undefined,
-    enabled: !!user,
+    sources: selectedSources.length > 0 && selectedSources.length < ALL_SOURCES.length ? selectedSources : undefined,
+    // 全不选时不请求
+    enabled: !!user && selectedSources.length > 0,
+  });
+
+  // 刷新状态管理
+  const { isRefreshing, progress, startRefresh } = useRefreshStatus({
+    onCompleted: () => {
+      refetch();
+    },
   });
 
   const handleRefresh = useCallback(async () => {
-    try {
-      await api.refresh();
-      refetch();
-    } catch (error) {
-      console.error('刷新失败:', error);
-    }
-  }, [refetch]);
+    await startRefresh();
+  }, [startRefresh]);
 
   const handleLogout = useCallback(async () => {
     await logout();
@@ -61,10 +64,21 @@ function App() {
           selectedSources={selectedSources}
           onSourcesChange={setSelectedSources}
           onRefresh={handleRefresh}
-          isRefreshing={isFetching}
+          isRefreshing={isRefreshing}
+          progress={progress}
         />
 
-        {articlesLoading && (
+        {/* 全不选时的空状态 */}
+        {!articlesLoading && !articlesError && selectedSources.length === 0 && (
+          <EmptyState
+            message="请选择至少一个数据源"
+            onRefresh={handleRefresh}
+            isRefreshing={isRefreshing}
+          />
+        )}
+
+        {/* 加载中 */}
+        {selectedSources.length > 0 && articlesLoading && (
           <div className="space-y-6">
             {[1, 2, 3].map((i) => (
               <div key={i} className="bg-bg-primary border border-border rounded-lg p-6">
@@ -81,25 +95,31 @@ function App() {
           </div>
         )}
 
-        {!articlesLoading && articlesError && (
+        {/* 错误状态 */}
+        {selectedSources.length > 0 && !articlesLoading && articlesError && (
           <ErrorState
             message={articlesError.message || '加载失败'}
             onRetry={() => refetch()}
           />
         )}
 
-        {!articlesLoading && !articlesError && articles.length === 0 && (
+        {/* 无文章 */}
+        {selectedSources.length > 0 && !articlesLoading && !articlesError && articles.length === 0 && (
           <EmptyState
             message="暂无文章"
             onRefresh={handleRefresh}
-            isRefreshing={isFetching}
+            isRefreshing={isRefreshing}
           />
         )}
 
-        {!articlesLoading && !articlesError && articles.length > 0 && (
+        {/* 文章列表 */}
+        {selectedSources.length > 0 && !articlesLoading && !articlesError && articles.length > 0 && (
           <ArticleList articles={articles} />
         )}
       </main>
+
+      {/* Toast 通知 */}
+      <Toaster position="top-center" richColors duration={3000} closeButton />
     </div>
   );
 }

@@ -41,8 +41,8 @@ export function FilterBar({
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="flex items-center justify-between gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-3 min-w-0 flex-1">
         <div className="relative">
           <button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -75,7 +75,7 @@ export function FilterBar({
       <button
         onClick={onRefresh}
         disabled={isRefreshing}
-        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0 whitespace-nowrap"
         title={isRefreshing && progress ? `正在处理 ${progress.currentSource}...` : undefined}
       >
         <svg

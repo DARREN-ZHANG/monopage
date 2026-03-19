@@ -4,7 +4,6 @@ import type {
   LoginResponse,
   MeResponse,
   LogoutResponse,
-  RefreshResponse,
   RefreshTriggerResponse,
   RefreshStatusResponse,
   ApiErrorResponse,
